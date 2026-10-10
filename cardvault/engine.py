@@ -1,6 +1,9 @@
 from __future__ import annotations
 from .i18n import tr
 import csv
+import copy
+from .io_guard import ReadGuard, ReadCancelled
+from .hash_process import HashProcesses, HashTimeout
 import hashlib
 import io
 import json
@@ -65,9 +68,17 @@ class Engine:
         self.state_dir = state_dir.resolve()
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self.persistence_lock = threading.Lock()
+        self.log_lock = threading.Lock()
+        self.destination_lock = threading.Lock()
+        self.last_saved = {}
+        self.io_guard = ReadGuard()
+        self.hash_processes = HashProcesses()
         self.jobs = {}
         self.stops = {}
         self.transfers = {}
+        self.verifications = {}
+        self.verify_threads = {}
         self.aborts = {}
         self.pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix='backup')
         for file in self.state_dir.glob('*.json'):
@@ -81,16 +92,30 @@ class Engine:
             except (ValueError, KeyError, OSError):
                 continue
 
-    def save(self, job):
-        with self.lock:
-            job['updated'] = datetime.now().isoformat(timespec='seconds')
-            atomic_json(self.state_dir / (job['id'] + '.json'), job)
+    def save(self, job, force=False, paused=False):
+        # Always called without self.lock. Disk flushes must not block snapshots
+        # or a pause request. One serializer also prevents stale saves overtaking.
+        with self.persistence_lock:
+            now = time.monotonic()
+            if not force and now - self.last_saved.get(job['id'], 0) < .5:
+                return
+            with self.lock:
+                job['updated'] = datetime.now().isoformat(timespec='seconds')
+                saved = copy.deepcopy(job)
+                if paused:
+                    saved.update(status='paused', message=tr('进度已保存，重新连接存储设备后可继续'))
+            atomic_json(self.state_dir / (job['id'] + '.json'), saved)
+            self.last_saved[job['id']] = time.monotonic()
+            if paused:
+                with self.lock:
+                    job.update(status=saved['status'], message=saved['message'])
 
     def log(self, job, level, message):
         with self.lock:
             event = {'time': datetime.now().isoformat(timespec='seconds'), 'level': level, 'message': message}
             job['events'].append(event)
             job['events'] = job['events'][-100:]
+        with self.log_lock:
             with (self.state_dir / (job['id'] + '.jsonl')).open('a', encoding='utf-8') as f:
                 f.write(json.dumps(event, ensure_ascii=False) + '\n')
 
@@ -98,6 +123,7 @@ class Engine:
         with self.lock:
             public = {k: v for k, v in job.items() if k != 'files'}
             public['events'] = list(job['events'])
+            public['io_wait_seconds'], public['io_wait_path'] = max(self.io_guard.waiting(job['id']), self.hash_processes.waiting(job['id']), key=lambda value: value[0])
             public['errors'] = [{'path': f['relative'], 'error': f.get('error', '')} for f in job['files'] if f['status'] == 'failed']
             return json.loads(json.dumps(public))
 
@@ -110,16 +136,16 @@ class Engine:
         if not source.is_dir():
             raise ValueError(tr('请选择有效的源目录或存储卡'))
         raw_targets = data.get('targets', [])
-        if not 1 <= len(raw_targets) <= 2 or any((not str(p).strip() for p in raw_targets)):
-            raise ValueError(tr('请选择一个或两个备份目录'))
+        if not isinstance(raw_targets, list) or not raw_targets or any((not str(p).strip() for p in raw_targets)):
+            raise ValueError(tr('请至少选择一个备份目录'))
         targets = [Path(p).expanduser().resolve() for p in raw_targets]
         for target in targets:
             if under(target, source) or under(source, target):
                 raise ValueError(tr('源目录和备份目录不能相同或相互包含'))
             if under(self.state_dir, source) or under(self.state_dir, target) or under(target, self.state_dir):
                 raise ValueError(tr('备份路径不能包含应用的任务数据目录'))
-        if len(targets) == 2 and (under(targets[0], targets[1]) or under(targets[1], targets[0])):
-            raise ValueError(tr('两个备份目录不能相同或相互包含'))
+        if any(under(a, b) or under(b, a) for i, a in enumerate(targets) for b in targets[i + 1:]):
+            raise ValueError(tr('备份目录不能重复或相互包含'))
         mode = data.get('filter', 'all')
         duplicate = data.get('duplicate', 'rename')
         organize = data.get('organize', 'original')
@@ -127,11 +153,13 @@ class Engine:
             raise ValueError(tr('无效的备份选项'))
         if data.get('verification', 'per_file') not in {'per_file', 'batch'}:
             raise ValueError(tr('无效的备份选项'))
+        if data.get('hash_algorithm', 'sha256') not in {'sha256', 'md5'}:
+            raise ValueError(tr('无效的备份选项'))
         extensions = {'.' + s.strip().lower().lstrip('.') for s in str(data.get('extensions', '')).replace(',', ' ').replace('，', ' ').split()}
         if mode == 'custom' and (not extensions):
             raise ValueError(tr('请填写自定义扩展名，例如 jpg, mp4'))
         project = clean_name(str(data.get('project', '')).strip()) if data.get('project', '').strip() else ''
-        job = {'id': uuid.uuid4().hex, 'name': project or source.name or str(source), 'source': str(source), 'targets': [str(t) for t in targets], 'filter': mode, 'extensions': sorted(extensions), 'duplicate': duplicate, 'organize': organize, 'rename': bool(data.get('rename', False)), 'project': project, 'retries': min(5, max(0, int(data.get('retries', 2)))), 'workers': min(8, max(1, int(data.get('workers', 3)))), 'verification': data.get('verification', 'per_file'), 'status': 'queued', 'created': datetime.now().isoformat(timespec='seconds'), 'files': [], 'events': [], 'scanned': False, 'total_files': 0, 'total_bytes': 0, 'done_bytes': 0, 'copied': 0, 'skipped': 0, 'failed': 0, 'speed': 0, 'current': '', 'message': tr('等待开始'), 'scan_warnings': 0}
+        job = {'id': uuid.uuid4().hex, 'name': project or source.name or str(source), 'source': str(source), 'targets': [str(t) for t in targets], 'filter': mode, 'extensions': sorted(extensions), 'duplicate': duplicate, 'organize': organize, 'rename': bool(data.get('rename', False)), 'project': project, 'retries': min(5, max(0, int(data.get('retries', 2)))), 'workers': min(8, max(1, int(data.get('workers', 3)))), 'verification': data.get('verification', 'per_file'), 'hash_algorithm': data.get('hash_algorithm', 'sha256'), 'status': 'queued', 'created': datetime.now().isoformat(timespec='seconds'), 'files': [], 'events': [], 'scanned': False, 'total_files': 0, 'total_bytes': 0, 'done_bytes': 0, 'copied': 0, 'skipped': 0, 'failed': 0, 'speed': 0, 'current': '', 'message': tr('等待开始'), 'scan_warnings': 0}
         with self.lock:
             for other in self.jobs.values():
                 if other['status'] in {'queued', 'checking', 'scanning', 'copying', 'verifying', 'pausing'}:
@@ -140,9 +168,9 @@ class Engine:
                     if any((under(a, Path(other['source'])) or under(Path(other['source']), a) for a in targets)) or any((under(source, Path(b)) or under(Path(b), source) for b in other['targets'])):
                         raise ValueError(tr('当前路径与其他运行中任务的源目录交叉，已阻止写入'))
             self.jobs[job['id']] = job
-            self.save(job)
-            if start:
-                self.submit(job)
+        self.save(job, force=True)
+        if start:
+            self.submit(job)
         return self.snapshot(job)
 
     def submit(self, job):
@@ -150,10 +178,14 @@ class Engine:
         self.pool.submit(self.run, job)
 
     def pause(self, ident):
+        event = self.stops.get(ident)
+        if event is not None:
+            event.set()
         with self.lock:
             job = self.jobs[ident]
             if job['status'] in {'queued', 'checking', 'scanning', 'copying', 'verifying'}:
-                self.stops[ident].set()
+                if event is not None:
+                    event.set()
                 job['status'] = 'pausing'
                 job['message'] = tr('正在保存进度…')
             return self.snapshot(job)
@@ -175,9 +207,9 @@ class Engine:
                     item.pop('error', None)
             job['status'] = 'queued'
             job['speed'] = 0
-            self.save(job)
-            self.submit(job)
-            return self.snapshot(job)
+        self.save(job, force=True)
+        self.submit(job)
+        return self.snapshot(job)
 
     def checkpoint(self, job):
         if self.stops.get(job['id'], threading.Event()).is_set() or self.aborts.get(job['id'], threading.Event()).is_set():
@@ -227,7 +259,7 @@ class Engine:
         job['total_files'] = len(planned)
         job['total_bytes'] = sum((f['size'] for f in planned)) * len(job['targets'])
         job['scanned'] = True
-        self.save(job)
+        self.save(job, force=True)
         self.log(job, 'info', tr('扫描完成：{v0} 个文件，{v1} 个副本', v0=len(planned), v1=len(job['targets'])))
 
     def checked_dest(self, job, target, relative):
@@ -271,8 +303,8 @@ class Engine:
         for base, needed in volumes.values():
             if shutil.disk_usage(base).free < needed + 16 * 1024 * 1024:
                 raise OSError(tr('目标磁盘空间不足：{v0}，需约 {v1} GB（另留 16 MB）', v0=base, v1=format(needed / 1024 ** 3, f'.2f')))
-        if len(job['targets']) == 2 and len(volumes) == 1 and (not job.get('target_errors')):
-            self.log(job, 'warning', tr('两个目标位于同一磁盘卷；建议选择两块独立硬盘以降低设备故障风险'))
+        if len(job['targets']) > 1 and len(volumes) < len(job['targets']) and (not job.get('target_errors')):
+            self.log(job, 'warning', tr('部分目标位于同一磁盘卷；建议使用独立硬盘降低设备故障风险'))
 
     def probe_target(self, job, target):
         """Exercise creation, durable write, read, publication and cleanup before copying."""
@@ -312,19 +344,27 @@ class Engine:
         if len(job['target_errors']) == len(job['targets']):
             raise TargetUnavailable('\n\n'.join(job['target_errors'].values()))
 
+    def stopped(self, job):
+        return any(event is not None and event.is_set() for event in (self.stops.get(job['id']), self.aborts.get(job['id'])))
+
+    def read_io(self, job, path, operation):
+        try:
+            return self.io_guard.call(job['id'], path, lambda: self.stopped(job), operation)
+        except ReadCancelled:
+            raise Paused() from None
+
     def digest(self, path, job, limit=None):
-        hasher = hashlib.sha256()
-        with path.open('rb') as f:
-            remaining = limit
-            while remaining is None or remaining > 0:
-                self.checkpoint(job)
-                chunk = f.read(CHUNK if remaining is None else min(CHUNK, remaining))
-                if not chunk:
-                    break
-                hasher.update(chunk)
-                if remaining is not None:
-                    remaining -= len(chunk)
-        return hasher.hexdigest()
+        def progress(amount):
+            with self.lock:
+                index = self.verify_threads.get((job['id'], threading.get_ident()))
+                if index is not None:
+                    self.verifications[job['id']][index]['read'] += amount
+                    self.refresh_counts(job)
+        try:
+            return self.hash_processes.digest(path, job.get('hash_algorithm', 'sha256'), limit,
+                                             job['id'], lambda: self.stopped(job), progress)
+        except ReadCancelled:
+            raise Paused() from None
 
     def refresh_counts(self, job):
         with self.lock:
@@ -334,6 +374,15 @@ class Engine:
             active = self.transfers.get(job['id'], {})
             job['done_bytes'] = sum((f['size'] * len(f['copies']) for f in job['files'])) + sum(f['size'] * len(f.get('staged', {})) for f in job['files']) + sum((v[0] for v in active.values()))
             job['speed'] = sum((v[1] for v in active.values()))
+            # Count empty files as one unit. Verification includes target and source reads.
+            job['progress_total'] = sum(max(f['size'], 1) for f in job['files']) * len(job['targets'])
+            job['copy_progress'] = sum(max(f['size'], 1) * (len(f['copies']) + len(f.get('staged', {}))) for f in job['files']) + sum(v[0] for v in active.values())
+            job['verify_progress'] = sum(max(f['size'], 1) * len(f['copies']) for f in job['files'])
+            for record in self.verifications.get(job['id'], {}).values():
+                if record['target'] not in record['item']['copies']:
+                    job['verify_progress'] += min(record['read'] / 2, record['item']['size'] * .99)
+            job['copy_progress'] = min(job['progress_total'], job['copy_progress'])
+            job['verify_progress'] = min(job['progress_total'], job['verify_progress'])
 
     def check_source(self, source, item):
         if linklike(source) or normalized_path(source.resolve()) != normalized_path(source):
@@ -359,28 +408,35 @@ class Engine:
                     counter += 1
                 reserved.add(str(dest).casefold())
                 item.setdefault('destinations', {})[target] = {'path': str(dest.relative_to(target)), 'collision': collision or bool(saved and saved['collision'])}
-        self.save(job)
+        self.save(job, force=True)
 
     def copy_one(self, job, item, target, index):
+        algorithm = job.get('hash_algorithm', 'sha256')
         source = Path(job['source']) / item['relative']
         self.check_source(source, item)
+        staged = item.get('staged', {}).get(target)
+        if job.get('verification') == 'batch' and staged and not staged.get('verify_failed'):
+            partial = self.checked_dest(job, target, staged['staging'])
+            if partial.is_file() and partial.stat().st_size == item['size']:
+                return
         job['status'] = 'verifying'
-        job['message'] = tr('计算源文件 SHA-256')
+        job['message'] = tr('计算源文件 {v0}', v0=algorithm.upper())
         expected = self.digest(source, job)
-        if item.get('sha256') and item['sha256'] != expected:
+        if item.get(algorithm) and item[algorithm] != expected:
             raise OSError(tr('源文件内容已变化，请创建新任务'))
         with self.lock:
-            item['sha256'] = expected
+            item[algorithm] = expected
         existing = item['copies'].get(target)
         if existing:
             dest = self.checked_dest(job, target, existing['path'])
             if dest.is_file() and dest.stat().st_size == item['size'] and (self.digest(dest, job) == expected):
                 return
-            with self.lock:
-                del item['copies'][target]
+            with self.destination_lock:
+                with self.lock:
+                    del item['copies'][target]
                 allocation = item['destinations'][target]
                 if job['duplicate'] == 'rename' or allocation['collision']:
-                    reserved = {str(self.checked_dest(job, target, other['destinations'][target]['path'])).casefold() for other in job['files'] if other is not item}
+                    reserved = {str(Path(target) / other['destinations'][target]['path']).casefold() for other in job['files'] if other is not item}
                     original, counter = dest, 1
                     while dest.exists() or str(dest).casefold() in reserved:
                         dest = original.with_name(f'{original.stem} ({counter}){original.suffix}')
@@ -399,22 +455,22 @@ class Engine:
             if dest.is_file() and dest.stat().st_size == item['size'] and self.digest(dest, job) == expected:
                 self.check_source(source, item)
                 with self.lock:
-                    item['copies'][target] = {'path': relative, 'sha256': expected, 'action': 'copied'}
+                    item['copies'][target] = {'path': relative, algorithm: expected, 'action': 'copied'}
                 return
-            with self.lock:
-                reserved = {str(self.checked_dest(job, target, other['destinations'][target]['path'])).casefold() for other in job['files'] if other is not item}
+            with self.destination_lock:
+                reserved = {str(Path(target) / other['destinations'][target]['path']).casefold() for other in job['files'] if other is not item}
                 original, counter = dest, 1
                 while dest.exists() or str(dest).casefold() in reserved:
                     dest = original.with_name(f'{original.stem} ({counter}){original.suffix}')
                     counter += 1
                 relative = str(dest.relative_to(target))
                 allocation['path'] = relative
-                self.save(job)
+            self.save(job, force=True)
         if dest.exists() and (not collision) and (job['duplicate'] == 'skip'):
             if dest.is_file() and dest.stat().st_size == item['size'] and (self.digest(dest, job) == expected):
                 self.check_source(source, item)
                 with self.lock:
-                    item['copies'][target] = {'path': relative, 'sha256': expected, 'action': 'skipped'}
+                    item['copies'][target] = {'path': relative, algorithm: expected, 'action': 'skipped'}
                 return
             raise OSError(tr('同名文件内容不同，已保留原文件；请选择自动改名或覆盖策略'))
         staging = self.checked_dest(job, target, str(dest.parent.relative_to(target) / f".cardvault-{job['id']}-{index}.part"))
@@ -432,7 +488,7 @@ class Engine:
             src.seek(offset)
             while True:
                 self.checkpoint(job)
-                block = src.read(CHUNK)
+                block = self.read_io(job, source, lambda: src.read(CHUNK))
                 if not block:
                     break
                 dst.write(block)
@@ -443,26 +499,46 @@ class Engine:
             dst.flush()
             os.fsync(dst.fileno())
         with self.lock:
-            item.setdefault('staged', {})[target] = {'path': relative, 'staging': str(staging.relative_to(target)), 'sha256': expected, 'collision': collision}
+            item.setdefault('staged', {})[target] = {'path': relative, 'staging': str(staging.relative_to(target)), algorithm: expected, 'collision': collision}
             self.transfers.get(job['id'], {}).pop(index, None)
             self.refresh_counts(job)
-            self.save(job)
+        self.save(job)
         if job.get('verification', 'per_file') != 'batch':
             self.verify_one(job, item, target, index)
 
     def verify_one(self, job, item, target, index):
+        with self.lock:
+            self.verifications.setdefault(job['id'], {})[index] = {'item': item, 'target': target, 'read': 0}
+            self.verify_threads[(job['id'], threading.get_ident())] = index
+        try:
+            self._verify_one(job, item, target, index)
+        except HashTimeout:
+            raise
+        except (OSError, ValueError):
+            with self.lock:
+                if target in item.get('staged', {}):
+                    item['staged'][target]['verify_failed'] = True
+            raise
+        finally:
+            with self.lock:
+                self.verifications.get(job['id'], {}).pop(index, None)
+                self.verify_threads.pop((job['id'], threading.get_ident()), None)
+                self.refresh_counts(job)
+
+    def _verify_one(self, job, item, target, index):
+        algorithm = job.get('hash_algorithm', 'sha256')
         record = item['staged'][target]
         source = Path(job['source']) / item['relative']
-        relative, collision, expected = record['path'], record['collision'], record['sha256']
+        relative, collision, expected = record['path'], record['collision'], record[algorithm]
         dest = self.checked_dest(job, target, relative)
         staging = self.checked_dest(job, target, record['staging'])
         self.check_source(source, item)
         with self.lock:
             self.transfers.get(job['id'], {}).pop(index, None)
-            job.update(status='verifying', message=tr('校验目标副本 SHA-256'))
+            job.update(status='verifying', message=tr('校验目标副本 {v0}', v0=algorithm.upper()))
             self.refresh_counts(job)
         if self.digest(staging, job) != expected:
-            raise OSError(tr('SHA-256 校验不一致，目标副本未提交'))
+            raise OSError(tr('{v0} 校验不一致，目标副本未提交', v0=algorithm.upper()))
         if self.digest(source, job) != expected:
             raise OSError(tr('复制期间源文件发生变化，目标副本未提交'))
         self.check_source(source, item)
@@ -481,7 +557,7 @@ class Engine:
             self.log(job, 'warning', tr('无法保留文件时间：{v0}', v0=dest.name))
         with self.lock:
             item.get('staged', {}).pop(target, None)
-            item['copies'][target] = {'path': relative, 'sha256': expected, 'action': 'copied'}
+            item['copies'][target] = {'path': relative, algorithm: expected, 'action': 'copied'}
             self.transfers.get(job['id'], {}).pop(index, None)
 
     def process_file(self, job, index, item, verify_only=False):
@@ -512,7 +588,7 @@ class Engine:
                         self.transfers.get(job['id'], {}).pop(index, None)
                     self.save(job)
                     break
-                except Paused:
+                except (Paused, HashTimeout):
                     raise
                 except (OSError, ValueError) as error:
                     with self.lock:
@@ -540,7 +616,8 @@ class Engine:
             else:
                 item['status'] = 'skipped' if all((c['action'] == 'skipped' for c in item['copies'].values())) else 'done'
                 item.pop('error', None)
-                self.log(job, 'success', tr('校验完成：{v0}', v0=item['relative']))
+        if not errors and not item.get('staged'):
+            self.log(job, 'success', tr('校验完成：{v0}', v0=item['relative']))
         with self.lock:
             self.transfers.get(job['id'], {}).pop(index, None)
         self.refresh_counts(job)
@@ -549,6 +626,7 @@ class Engine:
             raise TargetUnavailable('\n\n'.join(job['target_errors'].values()))
 
     def run(self, job):
+        paused = False
         self.aborts[job['id']] = threading.Event()
         try:
             self.checkpoint(job)
@@ -556,13 +634,13 @@ class Engine:
             if not job['scanned']:
                 self.scan(job)
             self.space_check(job)
-            self.log(job, 'info', tr('任务开始；所有副本启用 SHA-256 校验'))
+            self.log(job, 'info', tr('任务开始；所有副本启用 {v0} 校验', v0=job.get('hash_algorithm', 'sha256').upper()))
             self.plan_destinations(job)
             self.transfers[job['id']] = {}
             for verify_only in ([False, True] if job.get('verification') == 'batch' else [False]):
                 job['phase'] = 'verification' if verify_only else 'transfer'
                 items = iter(enumerate(job['files']))
-                workers = min(8, max(1, int(job.get('workers', 3))))
+                workers = 1 if verify_only else min(8, max(1, int(job.get('workers', 3))))
                 with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='copy-' + job['id'][:6]) as pool:
                     pending = set()
     
@@ -589,7 +667,8 @@ class Engine:
             job['message'] = tr('完成：{v0} 个已复制，{v1} 个相同文件已跳过，{v2} 个失败', v0=job['copied'], v1=job['skipped'], v2=job['failed'])
             self.log(job, 'warning' if job['failed'] else 'success', job['message'])
         except Paused:
-            job.update(status='paused', message=tr('进度已保存，重新连接存储设备后可继续'))
+            paused = True
+            job.update(status='pausing', message=tr('正在保存进度…'))
             self.log(job, 'info', tr('任务已暂停'))
         except Exception as error:
             job.update(status='failed', message=str(error))
@@ -597,9 +676,10 @@ class Engine:
         finally:
             self.aborts.pop(job['id'], None)
             self.transfers.pop(job['id'], None)
+            self.verifications.pop(job['id'], None)
             job['speed'] = 0
             self.refresh_counts(job)
-            self.save(job)
+            self.save(job, force=True, paused=paused)
 
     def report(self, ident, format='json'):
         with self.lock:
@@ -610,11 +690,11 @@ class Engine:
             writer = csv.writer(out)
             writer.writerow([tr('成功'), job['summary']['success'], tr('失败'), job['failed'], tr('已跳过'), job['skipped'], tr('未完成'), job['summary']['pending']])
             writer.writerow([])
-            writer.writerow([tr('源文件'), tr('大小（字节）'), tr('状态'), tr('目标目录'), tr('目标文件'), 'SHA-256', tr('动作'), tr('错误')])
+            writer.writerow([tr('源文件'), tr('大小（字节）'), tr('状态'), tr('目标目录'), tr('目标文件'), job.get('hash_algorithm', 'sha256').upper(), tr('动作'), tr('错误')])
             for item in job['files']:
                 for target in job['targets']:
                     copy = item['copies'].get(target, {})
-                    row = [item['relative'], item['size'], item['status'], target, copy.get('path', ''), copy.get('sha256', ''), copy.get('action', ''), item.get('error', '')]
+                    row = [item['relative'], item['size'], item['status'], target, copy.get('path', ''), copy.get(job.get('hash_algorithm', 'sha256'), ''), copy.get('action', ''), item.get('error', '')]
                     writer.writerow(["'" + v if isinstance(v, str) and v.startswith(('=', '+', '-', '@', '\t', '\r', '\n')) else v for v in row])
             return ('\ufeff' + out.getvalue()).encode('utf-8')
         return json.dumps(job, ensure_ascii=False, indent=2).encode('utf-8')
@@ -623,3 +703,4 @@ class Engine:
         for event in self.stops.values():
             event.set()
         self.pool.shutdown(wait=True)
+        self.io_guard.close()

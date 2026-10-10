@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = '2.2.1'
+VERSION = '2.3.2'
 RELEASE = ROOT / 'release'
 PACKAGE = RELEASE / f'CardVault-{VERSION}-Windows-x64'
 BUILD = ROOT / 'build' / 'release'
@@ -124,13 +124,16 @@ def main():
                 output.write(file, Path(PACKAGE.name) / file.relative_to(PACKAGE))
     source_archive = RELEASE / f'CardVault-{VERSION}-source.zip'
     with zipfile.ZipFile(source_archive, 'w', compression=zipfile.ZIP_DEFLATED) as output:
-        files = [ROOT / name for name in ('start.py', 'requirements.txt', 'README.md', 'README.en.md', '.gitignore', '.gitattributes')]
+        files = [ROOT / name for name in ('start.py', 'requirements.txt', 'README.md', 'README.en.md', 'CHANGELOG.md', '.gitignore', '.gitattributes')]
         for folder, pattern in [('cardvault', '*.py'), ('tests', '*.py'), ('packaging', '*'), ('assets', '*'), ('docs', '*.md')]:
             files.extend(p for p in (ROOT / folder).rglob(pattern) if p.is_file() and '__pycache__' not in p.parts)
         for file in files:
             if file.is_file():
                 output.write(file, file.relative_to(ROOT))
-    checksums = {str(file.relative_to(RELEASE)): hashlib.file_digest(file.open('rb'), 'sha256').hexdigest() for file in (setup, PACKAGE / 'CardVault.exe', archive, source_archive)}
+    sys.path.insert(0, str(ROOT))
+    from cardvault.updater import build_package
+    update = build_package(PACKAGE, RELEASE / f'CardVault-{VERSION}-Windows-x64.upd', VERSION)
+    checksums = {str(file.relative_to(RELEASE)): hashlib.file_digest(file.open('rb'), 'sha256').hexdigest() for file in (setup, PACKAGE / 'CardVault.exe', archive, source_archive, update)}
     (RELEASE / 'SHA256SUMS.txt').write_text(''.join(f'{digest}  {name}\n' for name, digest in checksums.items()), encoding='utf-8')
     print(json.dumps({'release': str(archive), 'exe_bytes': (PACKAGE / 'CardVault.exe').stat().st_size, 'sha256': checksums}, indent=2), flush=True)
 

@@ -1,4 +1,4 @@
-#define Version "2.2.1"
+#define Version "2.3.2"
 [Setup]
 AppId={{1753D345-8BBB-4849-B0A2-914F0CCFF875}
 AppName=CardVault

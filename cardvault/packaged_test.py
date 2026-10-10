@@ -55,7 +55,13 @@ def run(result_file):
             (source / 'video.bin').write_bytes(payload[::-1])
             engine = Engine(root / 'state')
             window = MainWindow(engine, start_devices=False)
-            window.options.update(dual=True, secondary=str(root / 'copy-b'), notify=False, verification='batch')
+            assert window.width() * 9 == window.height() * 16
+            result['initial_window'] = [window.width(), window.height()]
+            window.options.update(notify=False)
+            window.destinations.add_path(str(root / 'copy-b'))
+            window.destinations.add_path(str(root / 'copy-c'))
+            window.verification_choice.setCurrentIndex(window.verification_choice.findData('batch'))
+            window.hash_choice.setCurrentIndex(window.hash_choice.findData('md5'))
             window.source.edit.setText(str(source))
             window.target.edit.setText(str(root / 'copy-a'))
             window.show()
@@ -73,14 +79,16 @@ def run(result_file):
             assert window.progress.value() == 1000
             window.grab().save(str(result_file.with_suffix('.png')))
             options = OptionsDialog(window.options, window)
-            assert options.dual.isChecked()
+            assert len(job['targets']) == 3
+            assert job['hash_algorithm'] == 'md5'
+            assert window.verify_progress.value() == 1000
             options.close()
             report = engine.report(job['id'], 'csv')
             assert report.startswith(b'\xef\xbb\xbf')
             for target in job['targets']:
                 assert (Path(target) / 'empty.txt').read_bytes() == b''
                 assert hashlib.sha256((Path(target) / 'video.bin').read_bytes()).digest() == hashlib.sha256(payload[::-1]).digest()
-            result.update(copied_files=job['copied'], verified_copies=6, workers=job['workers'], gui_progress=window.progress.value(), csv_bytes=len(report))
+            result.update(copied_files=job['copied'], verified_copies=9, workers=job['workers'], gui_progress=window.progress.value(), csv_bytes=len(report))
             window.ready_to_close = True
             window.close()
             engine.shutdown()

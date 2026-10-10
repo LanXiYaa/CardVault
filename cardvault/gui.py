@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot, QUrl
 from PySide6.QtGui import QDesktopServices, QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy, QSpinBox, QStatusBar, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget, QAbstractItemView, QColorDialog, QFontComboBox
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy, QSpinBox, QStatusBar, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget, QAbstractItemView, QColorDialog, QFontComboBox, QScrollArea
 from .engine import Engine, atomic_json, clean_name, under
 from .instance import InstanceLock
 from .system import drives, eject
@@ -23,9 +23,9 @@ ROOT = resource_root()
 ACTIVE = {'queued', 'checking', 'scanning', 'copying', 'verifying', 'pausing'}
 RECOVERABLE = {'paused', 'partial', 'failed'}
 STATUS = {'queued': '排队中', 'checking': '检查目标', 'scanning': '扫描文件', 'copying': '正在拷贝', 'verifying': '正在校验', 'pausing': '保存进度', 'paused': '已暂停', 'failed': '需要处理', 'partial': '部分失败', 'completed': '校验完成'}
-DEFAULTS = dict(filter='all', extensions='', organize='original', duplicate='rename', project='', rename=False, retries=2, dual=False, secondary='', sound=False, notify=True, workers=3, verification='per_file')
+DEFAULTS = dict(filter='all', extensions='', organize='original', duplicate='rename', project='', rename=False, retries=2, dual=False, secondary='', sound=False, notify=True, workers=3, verification='per_file', hash_algorithm='sha256')
 DEFAULT_FONT = 'Source Han Sans SC'
-STYLE = "\nQWidget { color:#293e34; font-family:'Source Han Sans SC'; font-size:13px; }\nQMainWindow,QDialog { background:#f5f7f2; }\nQLabel { background:transparent; }\nQLabel#brand { font-size:23px; font-weight:700; }\nQLabel#title { font-size:26px; font-weight:600; }\nQLabel#muted,QLabel#subtle { color:#7f8e79; }\nQLabel#subtle { font-size:11px; }\nQLabel#section { font-size:15px; font-weight:600; }\nQLabel#badge { background:#e9f0df; color:#607c49; border-radius:5px; padding:5px 10px; font-size:11px; }\nQFrame#card { background:white; border:1px solid #e2e9dc; border-radius:14px; }\nQLineEdit,QComboBox,QSpinBox { background:#fafcf7; border:1px solid #dce5d3; border-radius:7px; padding:10px 12px; min-height:18px; selection-background-color:#dbe8ce; }\nQLineEdit:focus,QComboBox:focus,QSpinBox:focus { border-color:#809e68; }\nQComboBox::drop-down { width:24px; border:none; }\nQComboBox QAbstractItemView { background:white; selection-background-color:#e9f0df; color:#293e34; }\nQPushButton,QToolButton { background:white; border:1px solid #dce5d3; border-radius:7px; padding:9px 16px; min-height:19px; color:#546e42; }\nQPushButton:hover,QToolButton:hover { background:#edf3e5; border-color:#bdcdaa; }\nQPushButton:disabled { color:#a8b19e; background:#f2f5ed; border-color:#e7ecdf; }\nQPushButton#primary { background:#3c634b; color:white; border:none; padding:13px 30px; font-weight:600; }\nQPushButton#primary:hover { background:#2e523c; }\nQPushButton#primary:disabled { background:#a7b7a1; }\nQPushButton#link { background:transparent; border:none; color:#6a8453; padding:6px 0; text-align:left; }\nQToolButton::menu-indicator { image:none; }\nQProgressBar { border:none; background:#edf2e5; border-radius:4px; min-height:8px; max-height:8px; }\nQProgressBar::chunk { background:#7e9e60; border-radius:4px; }\nQTableWidget,QListWidget,QPlainTextEdit { background:white; alternate-background-color:#f6f9f0; border:1px solid #e0e7d7; border-radius:7px; selection-background-color:#e6efd9; selection-color:#2e4831; outline:none; }\nQTableWidget::item { padding:7px; border:none; }\nQHeaderView::section { background:#eef3e6; color:#7c8d6c; padding:10px; border:none; font-size:12px; }\nQMenu { background:white; border:1px solid #dce5d3; border-radius:8px; padding:7px; }\nQMenu::item { padding:9px 28px 9px 16px; border-radius:4px; }\nQMenu::item:selected { background:#eaf1e0; }\nQMenu::separator { height:1px; background:#e6eddd; margin:5px; }\nQTabWidget::pane { background:white; border:1px solid #e0e7d7; border-radius:8px; padding:8px; }\nQTabBar::tab { padding:11px 19px; color:#8b997e; background:transparent; }\nQTabBar::tab:selected { color:#446332; background:#eaf1df; border-radius:6px; }\nQCheckBox { spacing:8px; padding:5px 0; }\nQStatusBar { background:#f5f7f2; color:#8d9b80; border:none; font-size:11px; }\n"
+STYLE = "\nQWidget { color:#293e34; font-family:'Source Han Sans SC'; font-size:13px; }\nQMainWindow,QDialog,QWidget#pageContent { background:#f5f7f2; }\nQLabel { background:transparent; }\nQLabel#brand { font-size:23px; font-weight:700; }\nQLabel#title { font-size:26px; font-weight:600; }\nQLabel#muted,QLabel#subtle { color:#7f8e79; }\nQLabel#subtle { font-size:11px; }\nQLabel#section { font-size:15px; font-weight:600; }\nQLabel#badge { background:#e9f0df; color:#607c49; border-radius:5px; padding:5px 10px; font-size:11px; }\nQFrame#card { background:white; border:1px solid #e2e9dc; border-radius:14px; }\nQLineEdit,QComboBox,QSpinBox { background:#fafcf7; border:1px solid #dce5d3; border-radius:7px; padding:10px 12px; min-height:18px; selection-background-color:#dbe8ce; }\nQLineEdit:focus,QComboBox:focus,QSpinBox:focus { border-color:#809e68; }\nQComboBox::drop-down { width:24px; border:none; }\nQComboBox QAbstractItemView { background:white; selection-background-color:#e9f0df; color:#293e34; }\nQPushButton,QToolButton { background:white; border:1px solid #dce5d3; border-radius:7px; padding:9px 16px; min-height:19px; color:#546e42; }\nQPushButton:hover,QToolButton:hover { background:#edf3e5; border-color:#bdcdaa; }\nQPushButton:disabled { color:#a8b19e; background:#f2f5ed; border-color:#e7ecdf; }\nQPushButton#primary { background:#3c634b; color:white; border:none; padding:13px 30px; font-weight:600; }\nQPushButton#primary:hover { background:#2e523c; }\nQPushButton#primary:disabled { background:#a7b7a1; }\nQPushButton#link { background:transparent; border:none; color:#6a8453; padding:6px 0; text-align:left; }\nQToolButton::menu-indicator { image:none; }\nQProgressBar { border:none; background:#edf2e5; border-radius:4px; min-height:8px; max-height:8px; }\nQProgressBar::chunk { background:#7e9e60; border-radius:4px; }\nQTableWidget,QListWidget,QPlainTextEdit { background:white; alternate-background-color:#f6f9f0; border:1px solid #e0e7d7; border-radius:7px; selection-background-color:#e6efd9; selection-color:#2e4831; outline:none; }\nQTableWidget::item { padding:7px; border:none; }\nQHeaderView::section { background:#eef3e6; color:#7c8d6c; padding:10px; border:none; font-size:12px; }\nQMenu { background:white; border:1px solid #dce5d3; border-radius:8px; padding:7px; }\nQMenu::item { padding:9px 28px 9px 16px; border-radius:4px; }\nQMenu::item:selected { background:#eaf1e0; }\nQMenu::separator { height:1px; background:#e6eddd; margin:5px; }\nQTabWidget::pane { background:white; border:1px solid #e0e7d7; border-radius:8px; padding:8px; }\nQTabBar::tab { padding:11px 19px; color:#8b997e; background:transparent; }\nQTabBar::tab:selected { color:#446332; background:#eaf1df; border-radius:6px; }\nQCheckBox { spacing:8px; padding:5px 0; }\nQStatusBar { background:#f5f7f2; color:#8d9b80; border:none; font-size:11px; }\n"
 
 def configure_application(app, appearance=None):
     if not app.property('cardvault_fonts_loaded'):
@@ -147,6 +147,59 @@ class FolderField(QWidget):
     def text(self):
         return self.edit.text().strip()
 
+class DestinationFields(QWidget):
+    changed = Signal()
+
+    def __init__(self, paths, parent=None):
+        super().__init__(parent)
+        self.fields = []
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet('QScrollArea {background:transparent;}')
+        self.scroll.viewport().setAutoFillBackground(False)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setAutoFillBackground(False)
+        self.rows = QVBoxLayout(content)
+        self.rows.setContentsMargins(0, 0, 0, 0)
+        self.rows.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.scroll.setWidget(content)
+        layout.addWidget(self.scroll)
+        layout.addWidget(button(tr('＋ 添加备份目标'), lambda: self.add_path(), 'link'))
+        for path in paths or ['']:
+            self.add_path(path)
+
+    def add_path(self, path=''):
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        field = FolderField(tr('选择电脑或另一块硬盘上的文件夹'), path)
+        field.edit.textChanged.connect(lambda _text: self.changed.emit())
+        remove = button(tr('移除'), lambda: self.remove_path(row, field))
+        layout.addWidget(field, 1)
+        layout.addWidget(remove)
+        self.rows.addWidget(row)
+        self.fields.append(field)
+        self.scroll.setFixedHeight(min(160, len(self.fields) * 48))
+        self.changed.emit()
+        return field
+
+    def remove_path(self, row, field):
+        if len(self.fields) == 1:
+            field.edit.clear()
+            return
+        self.fields.remove(field)
+        self.rows.removeWidget(row)
+        row.deleteLater()
+        self.scroll.setFixedHeight(min(160, len(self.fields) * 48))
+        self.changed.emit()
+
+    def paths(self):
+        return [field.text() for field in self.fields]
+
+
 class OptionsDialog(QDialog):
 
     def __init__(self, options, parent=None):
@@ -182,20 +235,15 @@ class OptionsDialog(QDialog):
         safe_form = QFormLayout(safety)
         safe_form.setContentsMargins(20, 24, 20, 20)
         safe_form.setSpacing(16)
-        self.duplicate = self.combo([(tr('自动改名，保留两个文件'), 'rename'), (tr('大小和 SHA-256 相同才跳过'), 'skip'), (tr('校验成功后覆盖同名文件'), 'overwrite')], 'duplicate')
-        self.dual = QCheckBox(tr('启用第二份备份'))
-        self.dual.setChecked(options['dual'])
-        self.secondary = FolderField(tr('选择第二块硬盘的备份目录'), options['secondary'])
-        self.secondary.setEnabled(options['dual'])
-        self.dual.toggled.connect(self.secondary.setEnabled)
+        self.duplicate = self.combo([(tr('自动改名，保留两个文件'), 'rename'), (tr('大小和所选摘要相同才跳过'), 'skip'), (tr('校验成功后覆盖同名文件'), 'overwrite')], 'duplicate')
         self.retries = QSpinBox()
         self.retries.setRange(0, 5)
         self.retries.setValue(options['retries'])
         self.retries.setSuffix(tr(' 次'))
-        for title, field in [(tr('同名文件'), self.duplicate), (tr('读取失败重试'), self.retries), ('', self.dual), (tr('第二个目标'), self.secondary)]:
+        for title, field in [(tr('同名文件'), self.duplicate), (tr('读取失败重试'), self.retries)]:
             safe_form.addRow(title, field)
-        safe_form.addRow('', label(tr('建议使用两块独立硬盘。每个副本都进行 SHA-256 校验；目标不可写时不会反复重试。'), 'muted', True))
-        tabs.addTab(safety, tr('安全与双盘'))
+        safe_form.addRow('', label(tr('备份目标在准备页面添加。每个副本均校验，建议使用独立硬盘。'), 'muted', True))
+        tabs.addTab(safety, tr('安全与重试'))
         reminders = QWidget()
         reminder_layout = QVBoxLayout(reminders)
         reminder_layout.setContentsMargins(20, 24, 20, 20)
@@ -226,10 +274,7 @@ class OptionsDialog(QDialog):
         if self.filter.currentData() == 'custom' and (not self.extensions.text().strip()):
             QMessageBox.warning(self, tr('缺少扩展名'), tr('请填写需要复制的扩展名。'))
             return
-        if self.dual.isChecked() and (not self.secondary.text()):
-            QMessageBox.warning(self, tr('缺少第二个目标'), tr('请为第二份备份选择文件夹。'))
-            return
-        self.options.update(filter=self.filter.currentData(), extensions=self.extensions.text(), organize=self.organize.currentData(), duplicate=self.duplicate.currentData(), project=self.project.text(), rename=self.rename.isChecked(), retries=self.retries.value(), dual=self.dual.isChecked(), secondary=self.secondary.text(), sound=self.sound.isChecked(), notify=self.notify.isChecked())
+        self.options.update(filter=self.filter.currentData(), extensions=self.extensions.text(), organize=self.organize.currentData(), duplicate=self.duplicate.currentData(), project=self.project.text(), rename=self.rename.isChecked(), retries=self.retries.value(), sound=self.sound.isChecked(), notify=self.notify.isChecked())
         super().accept()
 
 class DetailsDialog(QDialog):
@@ -495,13 +540,19 @@ class UpdatePage(QWidget):
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
         layout.addWidget(label(tr('当前版本：{v0}', v0=VERSION), 'section'))
-        self.message = label(tr('将新版 CardVault Setup 安装包拖入这里，或点击选择。'), 'muted', True)
+        self.message = label(tr('将新版 CardVault .upd 更新包拖入这里，或点击选择。'), 'muted', True)
         self.message.setMinimumHeight(100)
         self.message.setStyleSheet('border:2px dashed #b9c8b1; border-radius:12px; padding:20px;')
         layout.addWidget(self.message)
-        self.choose_button = button(tr('选择安装包…'), self.choose)
+        try:
+            outcome = json.loads((self.root / 'update/update-result.json').read_text(encoding='utf-8-sig'))
+            if outcome.get('status') == 'failed':
+                layout.addWidget(label(tr('上次更新失败：{v0}', v0=outcome.get('message', '')), 'muted', True))
+        except (OSError, ValueError):
+            pass
+        self.choose_button = button(tr('选择更新包…'), self.choose)
         layout.addWidget(self.choose_button)
-        layout.addWidget(label(tr('安装包保存在软件目录的 update 文件夹。开始更新后，任务安全暂停，程序退出；安装完成后自动重新启动。'), 'muted', True))
+        layout.addWidget(label(tr('更新包保存在 update 文件夹。退出后校验并解压替换程序，失败时回滚，完成后重新启动。'), 'muted', True))
         self.install_button = button(tr('安装更新并重启'), self.install, 'primary')
         self.install_button.setEnabled(False)
         layout.addWidget(self.install_button)
@@ -511,7 +562,7 @@ class UpdatePage(QWidget):
 
     def dragEnterEvent(self, event):
         urls = event.mimeData().urls()
-        if len(urls) == 1 and urls[0].isLocalFile() and urls[0].toLocalFile().lower().endswith('.exe') and self.choose_button.isEnabled():
+        if len(urls) == 1 and urls[0].isLocalFile() and urls[0].toLocalFile().lower().endswith('.upd') and self.choose_button.isEnabled():
             event.acceptProposedAction()
 
     def dropEvent(self, event):
@@ -522,7 +573,7 @@ class UpdatePage(QWidget):
                 event.acceptProposedAction()
 
     def choose(self):
-        path, _ = QFileDialog.getOpenFileName(self, tr('选择安装包…'), '', 'CardVault Setup (*.exe)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('选择更新包…'), '', 'CardVault Update (*.upd)')
         if path:
             self.stage(path)
 
@@ -530,7 +581,7 @@ class UpdatePage(QWidget):
         self.package = None
         self.install_button.setEnabled(False)
         self.choose_button.setEnabled(False)
-        self.message.setText(tr('正在检查并保存安装包…'))
+        self.message.setText(tr('正在检查并保存更新包…'))
         self.main.bridge.submit(lambda: stage_package(path, self.root), self.staged)
 
     def staged(self, result, error):
@@ -609,6 +660,12 @@ class SettingsDialog(QDialog):
             self.color = color
             self.color_button.setText(color.name())
 
+def initial_window_size(available_width, available_height):
+    # Integral multiples preserve 16:9 after DPI scaling; reserve window chrome.
+    units = max(1, min(80, (available_width - 40) // 16, (available_height - 80) // 9))
+    return units * 16, units * 9
+
+
 class MainWindow(QMainWindow):
 
     def __init__(self, engine, preferences_path=None, start_devices=True):
@@ -632,14 +689,23 @@ class MainWindow(QMainWindow):
         self.closing = self.ready_to_close = self.device_pending = False
         self.bridge = Bridge(self)
         self.setWindowTitle(tr('CardVault · 素材安全备份'))
-        self.resize(960, 830)
-        self.setMinimumSize(710, 800)
+        screen = QApplication.primaryScreen()
+        area = screen.availableGeometry() if screen else None
+        width, height = initial_window_size(area.width(), area.height()) if area else (1280, 720)
+        self.setMinimumSize(min(710, width), min(400, height))
+        self.resize(width, height)
         self.setWindowIcon(QIcon(str(ROOT / 'assets' / 'logo.svg')))
         central = QWidget()
-        self.setCentralWidget(central)
+        central.setObjectName('pageContent')
+        central.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page = QScrollArea()
+        page.setWidgetResizable(True)
+        page.setFrameShape(QFrame.Shape.NoFrame)
+        page.setWidget(central)
+        self.setCentralWidget(page)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(34, 25, 34, 18)
-        layout.setSpacing(20)
+        layout.setSpacing(12)
         header = QHBoxLayout()
         logo = QLabel()
         logo.setPixmap(self.windowIcon().pixmap(36, 36))
@@ -668,22 +734,44 @@ class MainWindow(QMainWindow):
         heading = QVBoxLayout()
         heading.setSpacing(6)
         heading.addWidget(label(tr('选择存储卡，开始备份。'), 'title'))
-        heading.addWidget(label(tr('源卡只读，每一个副本都经过 SHA-256 校验。'), 'muted'))
+        heading.addWidget(label(tr('源卡只读，每一个副本都经过完整性校验。'), 'muted'))
         layout.addLayout(heading)
         card = QFrame()
         card.setObjectName('card')
         fields = QVBoxLayout(card)
-        fields.setContentsMargins(24, 20, 24, 22)
-        fields.setSpacing(10)
+        fields.setContentsMargins(24, 14, 24, 14)
+        fields.setSpacing(6)
         fields.addWidget(label(tr('来源'), 'section'))
         self.source = FolderField(tr('选择存储卡或素材文件夹'), self.preferences.get('source', ''))
         self.source.setObjectName('sourceField')
         fields.addWidget(self.source)
         fields.addSpacing(8)
         fields.addWidget(label(tr('备份到'), 'section'))
-        self.target = FolderField(tr('选择电脑或另一块硬盘上的文件夹'), self.preferences.get('target', ''))
-        self.target.setObjectName('targetField')
-        fields.addWidget(self.target)
+        paths = self.preferences.get('targets')
+        if paths is None:
+            paths = [self.preferences.get('target', '')]
+            if self.options.get('dual') and self.options.get('secondary'):
+                paths.append(self.options['secondary'])
+        self.options.update(dual=False, secondary='')
+        self.destinations = DestinationFields(paths)
+        fields.addWidget(self.destinations)
+        self.remember_targets = QCheckBox(tr('记住目标目录，下次自动填入'))
+        self.remember_targets.setChecked(self.preferences.get('remember_targets', True))
+        fields.addWidget(self.remember_targets)
+        checks = QHBoxLayout()
+        checks.addWidget(label(tr('校验算法')))
+        self.hash_choice = QComboBox()
+        self.hash_choice.addItem('SHA-256 (Hash)', 'sha256')
+        self.hash_choice.addItem('MD5', 'md5')
+        self.hash_choice.setCurrentIndex(max(0, self.hash_choice.findData(self.options['hash_algorithm'])))
+        checks.addWidget(self.hash_choice)
+        checks.addWidget(label(tr('校验时机')))
+        self.verification_choice = QComboBox()
+        self.verification_choice.addItem(tr('每份拷贝完成立即校验'), 'per_file')
+        self.verification_choice.addItem(tr('全部拷贝完成后集中校验'), 'batch')
+        self.verification_choice.setCurrentIndex(max(0, self.verification_choice.findData(self.options['verification'])))
+        checks.addWidget(self.verification_choice, 1)
+        fields.addLayout(checks)
         fields.addSpacing(9)
         actions = QHBoxLayout()
         self.options_button = button(tr('拷贝选项…'), self.advanced, 'link')
@@ -698,7 +786,7 @@ class MainWindow(QMainWindow):
         self.progress_card.setObjectName('card')
         progress_layout = QVBoxLayout(self.progress_card)
         progress_layout.setContentsMargins(24, 19, 24, 18)
-        progress_layout.setSpacing(12)
+        progress_layout.setSpacing(8)
         progress_header = QHBoxLayout()
         self.job_title = label(tr('准备就绪'), 'section')
         progress_header.addWidget(self.job_title, 1)
@@ -710,11 +798,22 @@ class MainWindow(QMainWindow):
         self.result_counts = ResultCounts()
         self.result_counts.hide()
         progress_layout.addWidget(self.result_counts)
+        self.copy_progress_label = label(tr('拷贝进度：{v0}%', v0=0), 'subtle')
+        progress_layout.addWidget(self.copy_progress_label)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
+        self.progress.setStyleSheet('QProgressBar {min-height:12px; max-height:12px; background:#e4eee6;} QProgressBar::chunk {background:#5d8a6d;}')
         progress_layout.addWidget(self.progress)
+        self.verify_progress_label = label(tr('校验进度：{v0}%', v0=0), 'subtle')
+        progress_layout.addWidget(self.verify_progress_label)
+        self.verify_progress = QProgressBar()
+        self.verify_progress.setRange(0, 1000)
+        self.verify_progress.setValue(0)
+        self.verify_progress.setTextVisible(False)
+        self.verify_progress.setStyleSheet('QProgressBar {min-height:12px; max-height:12px; background:#e5eef5;} QProgressBar::chunk {background:#508ba8;}')
+        progress_layout.addWidget(self.verify_progress)
         self.file_label = label('', 'subtle')
         self.file_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         progress_layout.addWidget(self.file_label)
@@ -752,21 +851,45 @@ class MainWindow(QMainWindow):
         if start_devices:
             self.device_timer.start(15000)
             self.refresh_devices()
+        self.destinations.changed.connect(self.preparation_changed)
+        self.remember_targets.toggled.connect(self.preparation_changed)
+        self.hash_choice.currentIndexChanged.connect(self.preparation_changed)
+        self.verification_choice.currentIndexChanged.connect(self.preparation_changed)
+        self.update_options_text()
+        self.refresh()
+
+    @property
+    def target(self):
+        return self.destinations.fields[0]
+
+    def preparation_changed(self):
+        self.options['hash_algorithm'] = self.hash_choice.currentData()
+        self.options['verification'] = self.verification_choice.currentData()
+        self.save_preferences()
         self.update_options_text()
         self.refresh()
 
     def activate(self):
         self.showNormal()
+        if sys.platform == 'win32':
+            # Qt can already consider the widget visible after Windows applies
+            # the old updater's SW_HIDE startup flag. Restore the native HWND.
+            import ctypes
+            from ctypes import wintypes
+            user = ctypes.WinDLL('user32', use_last_error=True)
+            user.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+            user.ShowWindow.restype = wintypes.BOOL
+            user.ShowWindow(int(self.winId()), 9)
         self.raise_()
         self.activateWindow()
 
     def update_options_text(self):
         scope = {'all': tr('全部文件'), 'photo': tr('仅照片'), 'video': tr('仅视频'), 'custom': tr('自定义类型')}[self.options['filter']]
-        copies = tr('双盘备份') if self.options['dual'] else tr('单份备份')
+        copies = tr('{v0} 个备份目标', v0=len(self.destinations.fields))
         self.options_button.setText(tr('{v0} · {v1}  |  拷贝选项…', v0=scope, v1=copies))
 
     def save_preferences(self):
-        self.preferences.update(options=self.options, source=self.source.text(), target=self.target.text())
+        self.preferences.update(options=self.options, source=self.source.text(), target='', targets=self.destinations.paths() if self.remember_targets.isChecked() else [], remember_targets=self.remember_targets.isChecked())
         atomic_json(self.preferences_path, self.preferences)
 
     def save_preferences_initial(self):
@@ -779,6 +902,7 @@ class MainWindow(QMainWindow):
             self.preferences['language'] = dialog.language.currentData()
             self.options['workers'] = dialog.workers.value()
             self.options['verification'] = dialog.verification.currentData()
+            self.verification_choice.setCurrentIndex(self.verification_choice.findData(self.options['verification']))
             self.preferences['appearance'] = {'font': dialog.font_choice.currentFont().family(), 'color': dialog.color.name()}
             configure_application(QApplication.instance(), self.preferences['appearance'])
             self.save_preferences()
@@ -797,15 +921,10 @@ class MainWindow(QMainWindow):
     def start_jobs(self, sources):
         if self.closing:
             return False
-        if not sources or any((not s for s in sources)) or (not self.target.text()):
+        if not sources or any((not s for s in sources)) or any(not t for t in self.destinations.paths()):
             QMessageBox.information(self, tr('选择来源与目标'), tr('请先选择存储卡和备份目录。'))
             return False
-        targets = [self.target.text()]
-        if self.options['dual']:
-            if not self.options['secondary']:
-                QMessageBox.warning(self, tr('第二份备份'), tr('请在拷贝选项中选择第二个目标。'))
-                return False
-            targets.append(self.options['secondary'])
+        targets = self.destinations.paths()
         if self.options['duplicate'] == 'overwrite' and QMessageBox.question(self, tr('确认覆盖'), tr('目标中的同名文件将在新副本校验通过后被替换，旧版本无法从本应用恢复。是否继续？')) != QMessageBox.StandardButton.Yes:
             return False
         created = 0
@@ -837,7 +956,11 @@ class MainWindow(QMainWindow):
         self.pause_button.setVisible(bool(job and job['status'] in ACTIVE))
         self.resume_button.setVisible(bool(job and job['status'] in RECOVERABLE))
         self.details_button.setVisible(bool(job))
+        batch = (job or self.options).get('verification') == 'batch'
+        self.verify_progress.setVisible(batch)
+        self.verify_progress_label.setVisible(batch)
         if not job:
+            self.copy_progress_label.setText(tr('拷贝进度：{v0}%', v0=0) if batch else tr('拷贝与校验：{v0}%', v0=0))
             return
         self.result_counts.show()
         self.result_counts.update_job(job)
@@ -847,13 +970,28 @@ class MainWindow(QMainWindow):
         self.status_badge.setStyleSheet('background: #fbefdf; color: #9f6e32;' if job['status'] in {'partial', 'failed'} else '')
         self.message.setText(translate_text(job['message']).splitlines()[0])
         self.message.setToolTip(translate_text(job['message']))
+        if job.get('io_wait_seconds', 0) >= 2:
+            waiting = tr('正在等待存储设备响应：{v0} 秒', v0=int(job['io_wait_seconds']))
+            if job['status'] == 'pausing':
+                waiting = tr('已请求暂停，正在取消读取并等待设备响应：{v0} 秒', v0=int(job['io_wait_seconds']))
+            self.message.setText(waiting)
+            self.message.setToolTip(waiting + '\n' + job.get('io_wait_path', ''))
         self.pause_button.setEnabled(job['status'] != 'pausing' and (not self.closing))
-        if job['status'] in {'checking', 'scanning'}:
-            self.progress.setRange(0, 0)
-        else:
-            self.progress.setRange(0, 1000)
-            amount = 1000 if job['status'] == 'completed' else min(999, int(job['done_bytes'] / job['total_bytes'] * 1000)) if job['total_bytes'] else 0
-            self.progress.setValue(amount)
+        total = job.get('progress_total', job['total_bytes'])
+        copied = job.get('copy_progress', job['done_bytes'])
+        verified = job.get('verify_progress', 0)
+        copy_value = min(1000, int(copied / total * 1000)) if total else 0
+        verify_value = min(1000, int(verified / total * 1000)) if total else 0
+        if job['status'] == 'completed':
+            copy_value = verify_value = 1000
+        self.progress.setRange(0, 0 if job['status'] in {'checking', 'scanning'} else 1000)
+        combined = (copy_value + verify_value) // 2
+        if job['status'] != 'completed':
+            combined = min(combined, 999)
+        self.progress.setValue(copy_value if batch else combined)
+        self.verify_progress.setValue(verify_value)
+        self.copy_progress_label.setText(tr('拷贝进度：{v0}%', v0=f'{copy_value / 10:.1f}') if batch else tr('拷贝与校验：{v0}%', v0=f'{combined / 10:.1f}'))
+        self.verify_progress_label.setText(tr('校验进度：{v0}%', v0=f'{verify_value / 10:.1f}'))
         current = tr('当前文件：') + job['current'] if job['current'] else tr('目标：') + job['targets'][0]
         self.file_label.setText(self.file_label.fontMetrics().elidedText(current, Qt.TextElideMode.ElideMiddle, max(200, self.width() - 120)))
         self.file_label.setToolTip(current)
@@ -960,6 +1098,7 @@ class MainWindow(QMainWindow):
             return
         if any((j['status'] in ACTIVE for j in self.engine.list_jobs())) and QMessageBox.question(self, tr('保存并退出'), tr('正在运行的任务会安全暂停，下次启动后可以继续。是否退出？')) != QMessageBox.StandardButton.Yes:
             return
+        self.save_preferences()
         self.closing = True
         self.start_button.setEnabled(False)
         self.resume_button.setEnabled(False)
@@ -1034,6 +1173,7 @@ def main():
         QMessageBox.critical(window, tr('程序错误'), tr('{v0}\n\n错误详情已写入 data/native-error.log。', v0=error))
     sys.excepthook = report_exception
     window.show()
+    QTimer.singleShot(0, window.activate)
     try:
         app.exec()
     finally:

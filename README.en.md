@@ -1,6 +1,10 @@
 # CardVault
 
-**Memory card backup · SHA-256 verification · Native Windows desktop app**
+## 2.3.2 fixes
+
+Fixed hidden main windows after updates, including launches from older updaters. Hashing now runs in isolated read-only processes: pause and inactivity timeout cover opening, reading, and closing files. A digest is accepted only after file closure and successful worker exit; failed or timed-out verification never publishes a copy. Preserves the 16:9 startup window. Passed 78 automated tests, including timeout and pause with a simulated permanently blocked file close. Hardware or driver failures may still require attention; staged files and task checkpoints remain available for recovery.
+
+**Memory card backup · SHA-256 / MD5 verification · Native Windows desktop app**
 
 [简体中文](README.md) | **English**
 
@@ -8,7 +12,15 @@ Windows 10/11 x64 · Python + PySide6
 
 > **AI disclosure: This software was made with AI.** A human user supplied the requirements and guided iterations; AI generated and helped refine the application code, interface, and documentation. Third-party components, including Python, Qt, PySide6, and Source Han Sans, were developed by their respective authors and retain their own copyrights and licenses.
 
-CardVault backs up files from SD cards, microSD cards, USB drives, and camera memory cards to a computer or another storage device. Concurrent copying, SHA-256 verification, task recovery, and result reports help you check the outcome of each backup.
+CardVault backs up files from SD cards, microSD cards, USB drives, and camera memory cards to a computer or another storage device. Concurrent copying, SHA-256 / MD5 verification, task recovery, and result reports help you check the outcome of each backup.
+
+## Recent changes
+
+**2.3.1** prevents slow state writes from blocking the interface and pause requests. Batch verification uses sequential reads, with Windows read cancellation and timeout handling; complete staged copies are reused on resume. The startup window uses a screen-adaptive 16:9 aspect ratio.
+
+**2.3.0** adds multiple destinations with remembered paths, SHA-256 / MD5 selection on the preparation page, separate batch verification progress bars, and `.upd` packages with rollback on failure.
+
+See the [changelog](CHANGELOG.md) for release notes.
 
 ## Features
 
@@ -16,7 +28,9 @@ CardVault backs up files from SD cards, microSD cards, USB drives, and camera me
 | --- | --- |
 | Device and destination checks | Detect storage devices; check write access and available space |
 | Concurrent copying | 1–8 threads per task, 3 by default; up to 3 active tasks |
-| Two backup destinations | Copy the same files to two destinations and verify each copy |
+| Multiple destinations | Add or remove destinations on the preparation page and remember them for next time |
+| Checksum selection | Select SHA-256 (Hash) or MD5 before starting; the choice is stored per task |
+| Separate progress | Batch verification shows green copy progress above blue verification progress |
 | Two verification modes | Verify each copy immediately, or verify after all copying finishes |
 | File organization | File type filters, date-based folders, naming, and duplicate handling |
 | Recovery | Retries, task pause and resume, and task history |
@@ -24,7 +38,7 @@ CardVault backs up files from SD cards, microSD cards, USB drives, and camera me
 | Clear reports | Highlight successful, failed, skipped, and pending counts; export results |
 | Four UI languages | Simplified Chinese, Traditional Chinese, English, and Japanese; timezone-based first-run selection and manual override |
 | Appearance | Bundled open-licensed Source Han Sans; selectable font and theme color |
-| Local updates | Drop a newer Setup installer into the update page, then update and restart |
+| Local updates | Drop a dedicated .upd package to validate, extract, replace, roll back on failure, and restart |
 
 Throughput depends on the source card, reader, connection, and destination drive. More threads do not necessarily produce a proportional speed increase.
 
@@ -54,8 +68,8 @@ Use the Python entry point directly; no BAT launcher or virtual environment acti
 ## Basic workflow
 
 1. Insert a memory card and select the source device and backup destination.
-2. Configure filters, organization, naming, and a second destination if needed.
-3. Choose the thread count and verification mode in Settings.
+2. Configure filters, organization, naming, and additional destinations if needed.
+3. Choose the thread count in Settings, and the checksum algorithm and verification mode on the preparation page.
 4. Start the backup and monitor copying and verification.
 5. Review the final report, including failed and pending items, before managing the source files further.
 
@@ -73,11 +87,15 @@ Source Han Sans **is copyrighted**, but is distributed under the **SIL Open Font
 
 Previously saved custom font choices remain in effect. To switch, select `Source Han Sans SC` in Settings.
 
-## Local installer updates
+## Local .upd updates
 
-Drop a newer CardVault Setup installer into **Settings → Updates**. The app checks and stages the installer in the `update` folder. When the update starts, it saves task state and exits. An independent helper waits for the application to close, runs the installer against the existing installation directory, and relaunches the app.
+Drop a newer `CardVault-version-Windows-x64.upd` file into **Settings → Updates**. The dedicated ZIP-based format includes a manifest with file sizes and SHA-256 hashes. Renaming an arbitrary ZIP is not sufficient.
 
-This workflow uses a local installer; it does not download updates online. Use a newer Setup built for this project, not an arbitrary EXE or ZIP file.
+The application validates and stages the package in `update/`, saves task state, and exits. A helper waits for exit, rechecks and extracts the full payload, then replaces application files. On replacement errors it attempts to restore originals and restart the old version. Results and rollback copies remain in `update/`; task records and unrelated files are preserved.
+
+**Users on 2.2.x or earlier must first install 2.3 through Setup or switch to the new portable folder.** Older update pages cannot read `.upd`. Starting with 2.3, the update page accepts only newer `.upd` packages; Setup remains available for installation.
+
+Checksums detect corruption; they are not digital signatures. Obtain updates from a trusted source. The MD5 setting affects backup verification only; update packages always use SHA-256.
 
 ## Tests and builds
 
@@ -95,9 +113,8 @@ $env:ISCC = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 .\.venv\Scripts\python.exe packaging/build_release.py
 ```
 
-The `release/` directory receives the application folder, Setup installer, portable ZIP, source ZIP, and SHA-256 checksums. The build needs internet access to retrieve third-party license texts.
+The `release/` directory receives the application folder, Setup installer, portable ZIP, source ZIP, dedicated `.upd`, and SHA-256 checksums. The build needs internet access to retrieve third-party license texts.
 
-Additional documentation: [Build and source guide](docs/构建与源码说明.md) and [GitHub and Git tutorial](docs/GitHub与Git教程.md) (both in Chinese).
 
 ## Project layout
 
@@ -108,13 +125,14 @@ assets/                  SVG resources and update helper
   fonts/                 Source Han Sans, provenance, and license
 tests/                   Automated tests and UI rendering tools
 packaging/               Build scripts, installer definition, release checks
-docs/                    Development and Git guides
 requirements.txt         Runtime dependencies
 README.md                Chinese documentation
 README.en.md             English documentation
 ```
 
 ## Data and limitations
+
+Batch verification uses one sequential worker; copying still uses the configured concurrency. Long-running reads show a storage-wait indicator and request cancellation after 30 seconds before following the retry policy. Pausing also requests cancellation of pending reads. Windows drivers must acknowledge cancellation, so an unresponsive device may not stop immediately. State-file writes no longer hold the interface's global lock; the paused status is published after the checkpoint is written.
 
 - Source cards are read-only by default; the app does not delete source files. Verification checks copy integrity, but cannot guarantee the future reliability of storage hardware.
 - Two destinations on one physical drive do not protect against losing both copies if that drive fails.

@@ -57,7 +57,7 @@ class DesktopTests(unittest.TestCase):
         (source / 'photo.JPG').write_bytes(b'real file backup test' * 1024)
         self.window.source.edit.setText(str(source))
         self.window.target.edit.setText(str(self.root / 'A'))
-        self.window.options.update(dual=True, secondary=str(self.root / 'B'))
+        self.window.destinations.add_path(str(self.root / 'B'))
         self.window.start_button.click()
         job = self.wait_done()
         self.assertEqual(job['status'], 'completed', job['message'])
@@ -77,15 +77,12 @@ class DesktopTests(unittest.TestCase):
         self.assertIn('存储设备与安全弹出…', titles)
         options.deleteLater()
 
-    def test_options_save_custom_and_dual_backup(self):
+    def test_options_save_custom_filter(self):
         dialog = OptionsDialog(DEFAULTS, self.window)
         dialog.filter.setCurrentIndex(dialog.filter.findData('custom'))
         dialog.extensions.setText('jpg, arw')
-        dialog.dual.setChecked(True)
-        dialog.secondary.edit.setText(str(self.root / 'B'))
         dialog.accept()
         self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
-        self.assertTrue(dialog.options['dual'])
         self.assertEqual(dialog.options['filter'], 'custom')
         dialog.deleteLater()
 
@@ -115,6 +112,65 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(self.window.centralWidget().rect().contains(corner))
         self.assertTrue(self.window.source.rect().contains(self.window.source.edit.geometry()))
         self.assertTrue(self.window.target.rect().contains(self.window.target.edit.geometry()))
+
+    def test_preparation_remembers_destinations_without_starting_a_job(self):
+        import json
+        self.window.target.edit.setText(str(self.root / 'A'))
+        self.window.destinations.add_path(str(self.root / 'B'))
+        self.window.destinations.add_path(str(self.root / 'C'))
+        self.window.hash_choice.setCurrentIndex(self.window.hash_choice.findData('md5'))
+        self.window.verification_choice.setCurrentIndex(self.window.verification_choice.findData('batch'))
+        saved = json.loads(self.window.preferences_path.read_text(encoding='utf-8'))
+        self.assertEqual(saved['targets'], [str(self.root / p) for p in ('A', 'B', 'C')])
+        self.assertEqual(saved['options']['hash_algorithm'], 'md5')
+        reopened = MainWindow(self.engine, start_devices=False)
+        try:
+            self.assertEqual(reopened.destinations.paths(), saved['targets'])
+            self.assertEqual(reopened.hash_choice.currentData(), 'md5')
+            self.assertFalse(reopened.verify_progress.isHidden())
+        finally:
+            reopened.ready_to_close = True
+            reopened.close()
+
+    def test_forget_destinations_and_remove_rows(self):
+        import json
+        self.window.target.edit.setText(str(self.root / 'A'))
+        field = self.window.destinations.add_path(str(self.root / 'B'))
+        self.window.destinations.remove_path(field.parentWidget(), field)
+        self.assertEqual(self.window.destinations.paths(), [str(self.root / 'A')])
+        self.window.remember_targets.setChecked(False)
+        saved = json.loads(self.window.preferences_path.read_text(encoding='utf-8'))
+        self.assertEqual(saved['targets'], [])
+        self.assertEqual(saved['target'], '')
+
+    def test_batch_bars_show_independent_progress(self):
+        source = self.root / 'card'
+        source.mkdir()
+        (source / 'photo.bin').write_bytes(b'photo')
+        record = self.engine.create({'source': str(source), 'targets': [str(self.root / 'A')], 'verification': 'batch'}, start=False)
+        job = self.engine.jobs[record['id']]
+        job.update(status='verifying', total_bytes=100, done_bytes=100, progress_total=100, copy_progress=100, verify_progress=25)
+        self.window.current_id = job['id']
+        self.window.refresh()
+        self.assertEqual(self.window.progress.value(), 1000)
+        self.assertEqual(self.window.verify_progress.value(), 250)
+        self.assertTrue(self.window.verify_progress.isVisible())
+        self.assertIn('#508ba8', self.window.verify_progress.styleSheet())
+        self.assertIn('#5d8a6d', self.window.progress.styleSheet())
+        job['verification'] = 'per_file'
+        self.window.refresh()
+        self.assertTrue(self.window.verify_progress.isHidden())
+        self.assertEqual(self.window.progress.value(), 625)
+
+    def test_initial_window_uses_16_to_9_and_fits_available_screen(self):
+        from cardvault.gui import initial_window_size
+        for width, height in ((1920, 1080), (1366, 728), (800, 600)):
+            w, h = initial_window_size(width, height)
+            self.assertEqual(w * 9, h * 16)
+            self.assertLessEqual(w, width)
+            self.assertLessEqual(h + 80, height)
+        self.assertEqual(self.window.width() * 9, self.window.height() * 16)
+
 
 
 if __name__ == '__main__':
