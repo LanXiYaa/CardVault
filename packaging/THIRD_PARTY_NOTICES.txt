@@ -1,0 +1,29 @@
+CardVault Windows distribution — third-party components
+
+This executable embeds CPython, PySide6, Shiboken6, Qt runtime libraries,
+and the PyInstaller bootloader. It does not bundle a Python package manager.
+
+CPython: Python Software Foundation License and included third-party notices.
+Source: https://www.python.org/downloads/source/
+
+PySide6 / Shiboken6 6.11.2:
+Upstream package metadata: LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only.
+Source: https://code.qt.io/cgit/pyside/pyside-setup.git/
+Qt source: https://download.qt.io/official_releases/qt/
+Licensing information: https://doc.qt.io/qt-6/licensing.html
+The Qt/PySide components are distributed unmodified and dynamically loaded.
+Upstream distribution notices are included in the licenses directory.
+
+PyInstaller 6.22.3: GPL with the bootloader exception allowing distribution
+of generated applications. Source: https://github.com/pyinstaller/pyinstaller
+
+The companion CardVault source archive includes application code, dependency
+versions and build instructions so the executable can be rebuilt against
+replacement compatible runtime libraries. No restriction on reverse engineering
+for debugging modifications to LGPL components is imposed by this distribution.
+
+Source Han Sans SC 2.005, Regular and Bold (unmodified).
+Copyright 2014-2025 Adobe. SIL Open Font License 1.1.
+Source: https://github.com/adobe-fonts/source-han-sans/tree/2.005R
+Full copyright and license: assets/fonts/LICENSE.txt in source,
+_internal/assets/fonts/LICENSE.txt in the distributed application.

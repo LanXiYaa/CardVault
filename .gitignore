@@ -1,0 +1,26 @@
+# Local environments and Python caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# User records, update installers, test outputs and build products
+/data/
+/update/
+/.test-data/
+/artifacts/
+/build/
+/dist/
+/release/
+*.spec
+*.log
+
+# Local credentials and editor settings
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
