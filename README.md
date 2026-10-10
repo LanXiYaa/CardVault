@@ -4,7 +4,7 @@
 
 **简体中文** | [English](README.en.md)
 
-版本 **2.2.0** · Windows 10/11 x64 · Python + PySide6
+Windows 10/11 x64 · Python + PySide6
 
 > **AI 制作声明：本软件由 AI 制作。** 项目由用户提出需求并指导迭代，代码、界面与文档由 AI 生成和协助完善。Python、Qt、PySide6、思源黑体等第三方组件由各自作者开发，其版权与许可归各自权利人所有。
 
@@ -34,8 +34,8 @@ CardVault 用于将 SD 卡、TF 卡、U 盘及相机存储卡中的素材备份�
 
 维护者发布安装包后，可在本仓库的 **Releases** 页面获取：
 
-- `CardVault-2.2.0-Setup-x64.exe`：安装版，运行 Setup 后从快捷方式启动。
-- `CardVault-2.2.0-Windows-x64.zip`：便携版，完整解压后运行 `CardVault.exe`。
+- `CardVault-x.x.x-Setup-x64.exe`：安装版，运行 Setup 后从快捷方式启动。
+- `CardVault-x.x.x-Windows-x64.zip`：便携版，完整解压后运行 `CardVault.exe`。
 
 **发行版无需预装 Python 或依赖库。** 便携版请保留整个文件夹及其中的 DLL、字体和其他资源，不能只复制 EXE。源码仓库本身不包含安装包。
 

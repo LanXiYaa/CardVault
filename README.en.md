@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | **English**
 
-Version **2.2.0** · Windows 10/11 x64 · Python + PySide6
+Windows 10/11 x64 · Python + PySide6
 
 > **AI disclosure: This software was made with AI.** A human user supplied the requirements and guided iterations; AI generated and helped refine the application code, interface, and documentation. Third-party components, including Python, Qt, PySide6, and Source Han Sans, were developed by their respective authors and retain their own copyrights and licenses.
 
@@ -34,8 +34,8 @@ Throughput depends on the source card, reader, connection, and destination drive
 
 Once the maintainer publishes binaries, look for these files on this repository's **Releases** page:
 
-- `CardVault-2.2.0-Setup-x64.exe`: run the installer, then launch the installed shortcut.
-- `CardVault-2.2.0-Windows-x64.zip`: extract the entire archive and run `CardVault.exe`.
+- `CardVault-x.x.x-Setup-x64.exe`: run the installer, then launch the installed shortcut.
+- `CardVault-x.x.x-Windows-x64.zip`: extract the entire archive and run `CardVault.exe`.
 
 **Packaged releases do not require Python or additional libraries to be installed.** Keep the portable application folder intact, including its DLLs, fonts, and resources. Copying only the EXE will not work. Installers are not included in the source repository.
 

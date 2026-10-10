@@ -20,7 +20,7 @@ app=folder/'CardVault';app.parent.mkdir(parents=True)
 shutil.copytree(ROOT/'release/CardVault-2.1.0-Windows-x64',app)
 state=folder/'state';state.mkdir()
 (state/'keep.txt').write_text('preserve user history',encoding='utf-8')
-package=stage_package(ROOT/'release/CardVault-2.2.0-Setup-x64.exe',app,current='2.1.0')
+package=stage_package(ROOT/'release/CardVault-2.2.1-Setup-x64.exe',app,current='2.1.0')
 env={k:v for k,v in os.environ.items() if not k.upper().startswith(('PYTHON','QT_','PYSIDE','VIRTUAL_ENV','_PYI'))}
 env['PATH']=str(Path(os.environ['SystemRoot'])/'System32')
 env['QT_QPA_PLATFORM']='offscreen'
@@ -33,7 +33,7 @@ for _ in range(200):
     if report.exists():break
     time.sleep(.1)
 result=json.loads(report.read_text(encoding='utf-8'))
-assert result['ok'] and result['version']=='2.2.0',result
+assert result['ok'] and result['version']=='2.2.1',result
 assert result['verified_copies']==6
 assert (state/'keep.txt').read_text(encoding='utf-8')=='preserve user history'
 update=json.loads((app/'update/update-result.json').read_text(encoding='utf-8-sig'))

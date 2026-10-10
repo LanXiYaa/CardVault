@@ -25,6 +25,12 @@ def run(result_file):
         from .i18n import LANGUAGES, set_language, tr, install_qt_translation
         app = QApplication.instance() or QApplication([])
         configure_application(app)
+        from PySide6.QtGui import QFontInfo, QRawFont
+        assert QFontInfo(app.font()).family() == 'Source Han Sans SC'
+        font = QRawFont.fromFont(app.font())
+        assert all(font.supportsCharacter(ord(char)) for char in '备份備份検証あいうBackup')
+        assert (resource_root() / 'assets/fonts/LICENSE.txt').is_file()
+        result['default_font'] = QFontInfo(app.font()).family()
         for locale, expected in [('zh_CN', '设置'), ('zh_TW', '設定'), ('en', 'Settings'), ('ja', '設定')]:
             set_language(locale)
             assert tr('设置') == expected

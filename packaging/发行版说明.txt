@@ -1,8 +1,8 @@
-CardVault 2.2.0 · Windows 64 位发行版
+CardVault 2.2.1 · Windows 64 位发行版
 ===================================
 
 使用方法
-1. 运行 CardVault-2.2.0-Setup-x64.exe 安装。
+1. 运行 CardVault-2.2.1-Setup-x64.exe 安装。
 2. 从桌面或开始菜单打开 CardVault。
    也可解压目录发行包，保留完整目录后双击 CardVault.exe。
 3. 选择源存储卡和目标目录，开始备份。

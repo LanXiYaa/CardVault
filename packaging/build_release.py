@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = '2.2.0'
+VERSION = '2.2.1'
 RELEASE = ROOT / 'release'
 PACKAGE = RELEASE / f'CardVault-{VERSION}-Windows-x64'
 BUILD = ROOT / 'build' / 'release'

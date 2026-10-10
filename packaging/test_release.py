@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-package = ROOT / 'release/CardVault-2.2.0-Windows-x64'
+package = ROOT / 'release/CardVault-2.2.1-Windows-x64'
 exe = package / 'CardVault.exe'
 assert not (package / '_internal/icuuc.dll').exists(), 'Foreign ICU DLL breaks QtCore imports'
 assert not list((package / '_internal').glob('api-ms-win-*.dll')), 'Do not shadow Windows API sets'
@@ -25,7 +25,7 @@ env['QT_QPA_PLATFORM'] = 'windows' if '--native' in sys.argv else 'offscreen'
 env['TMP'] = env['TEMP'] = str(test_dir / 'temporary')
 (test_dir / 'temporary').mkdir()
 if '--installer' in sys.argv:
-    setup = ROOT / 'release/CardVault-2.2.0-Setup-x64.exe'
+    setup = ROOT / 'release/CardVault-2.2.1-Setup-x64.exe'
     installed = subprocess.run([str(setup), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=', '/DIR=' + str(test_dir), '/LOG=' + str(test_dir / 'install.log')], env=env, timeout=120)
     assert installed.returncode == 0, f'Installer failed: {installed.returncode}'
 else:
