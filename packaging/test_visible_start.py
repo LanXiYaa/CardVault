@@ -7,11 +7,11 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-ROOT = Path(__file__).resolve().parents[1]
+from release_paths import ROOT, OUTPUT, WORKSPACE
 sys.path.insert(0, str(ROOT))
 from cardvault.version import VERSION
-exe = ROOT / 'release' / f'CardVault-{VERSION}-Windows-x64/CardVault.exe'
-state = ROOT / '.test-data' / ('visible-start-' + str(time.time_ns()))
+exe = OUTPUT / f'CardVault-{VERSION}-Windows-x64/CardVault.exe'
+state = WORKSPACE / '.test-data' / ('visible-start-' + str(time.time_ns()))
 state.mkdir(parents=True)
 user = ctypes.WinDLL('user32', use_last_error=True)
 callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -59,7 +59,7 @@ try:
     user.PostMessageW(hwnd, 0x0010, 0, 0)
     assert process.wait(timeout=35) == 0
     result = dict(version=VERSION, legacy_hidden_start_visible=True, second_launch_activated=True, graceful_exit=True)
-    (ROOT / 'artifacts/visible-start.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    (WORKSPACE / 'artifacts/visible-start.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result))
 finally:
     if process.poll() is None:

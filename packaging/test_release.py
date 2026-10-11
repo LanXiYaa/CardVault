@@ -8,12 +8,12 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-package = ROOT / 'release/CardVault-2.3.2-Windows-x64'
+from release_paths import ROOT, OUTPUT, WORKSPACE
+package = OUTPUT / 'CardVault-2.3.3-Windows-x64'
 exe = package / 'CardVault.exe'
 assert not (package / '_internal/icuuc.dll').exists(), 'Foreign ICU DLL breaks QtCore imports'
 assert not list((package / '_internal').glob('api-ms-win-*.dll')), 'Do not shadow Windows API sets'
-test_dir = ROOT / '.test-data' / ('独立发行验证-' + str(time.time_ns()))
+test_dir = WORKSPACE / '.test-data' / ('独立发行验证-' + str(time.time_ns()))
 test_dir.mkdir(parents=True)
 copied = test_dir / 'CardVault.exe'
 env = {key: value for key, value in os.environ.items() if not key.upper().startswith(('PYTHON', 'PYSIDE', 'QT_', 'VIRTUAL_ENV', 'PYINSTALLER', '_PYI'))}
@@ -25,7 +25,7 @@ env['QT_QPA_PLATFORM'] = 'windows' if '--native' in sys.argv else 'offscreen'
 env['TMP'] = env['TEMP'] = str(test_dir / 'temporary')
 (test_dir / 'temporary').mkdir()
 if '--installer' in sys.argv:
-    setup = ROOT / 'release/CardVault-2.3.2-Setup-x64.exe'
+    setup = OUTPUT / 'CardVault-2.3.3-Setup-x64.exe'
     installed = subprocess.run([str(setup), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=', '/DIR=' + str(test_dir), '/LOG=' + str(test_dir / 'install.log')], env=env, timeout=120)
     assert installed.returncode == 0, f'Installer failed: {installed.returncode}'
 else:
@@ -42,7 +42,7 @@ assert len(result['languages']) == 4
 assert all(str(test_dir).lower() in path.lower() for path in result['module_search_paths']), result['module_search_paths']
 assert Path(result['data_dir']) == test_dir / 'local-user/CardVault'
 result.update(elapsed_seconds=round(time.monotonic() - start, 2), stripped_path=env['PATH'], copied_release_directory=True, platform=env['QT_QPA_PLATFORM'], exe_sha256=hashlib.sha256(exe.read_bytes()).hexdigest())
-artifact = ROOT / ('artifacts/release-native-test' if '--native' in sys.argv else 'artifacts/release-standalone-test')
+artifact = WORKSPACE / ('artifacts/release-native-test' if '--native' in sys.argv else 'artifacts/release-standalone-test')
 if '--installer' in sys.argv:
     sentinel = Path(result['data_dir']) / 'preserve-record.txt'
     sentinel.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +56,7 @@ if '--installer' in sys.argv:
     assert not copied.exists(), 'Uninstaller did not remove the application'
     assert sentinel.is_file(), 'Uninstall removed task history'
     result.update(installer_passed=True, uninstall_passed=True, history_preserved=True)
-    artifact = ROOT / 'artifacts/release-installer-test'
+    artifact = WORKSPACE / 'artifacts/release-installer-test'
 artifact.parent.mkdir(parents=True, exist_ok=True)
 artifact.with_suffix('.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
 shutil.copy2(report.with_suffix('.png'), artifact.with_suffix('.png'))

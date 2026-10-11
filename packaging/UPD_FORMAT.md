@@ -24,7 +24,7 @@ The replacement procedure handles ordinary exceptions and locked files. It is no
 
 ## Integration verification
 
-Build the new release, place an original 2.3.0 portable folder at `release/CardVault-2.3.0-Windows-x64`, then run:
+Build the new release, place an original 2.3.2 portable folder at `release/CardVault-2.3.2-Windows-x64`, then run:
 
 ```powershell
 .\.venv\Scripts\python.exe packaging/test_update.py
@@ -33,3 +33,7 @@ Build the new release, place an original 2.3.0 portable folder at `release/CardV
 The test uses fresh isolated copies under `.test-data`, checks successful replacement and restart, then holds an old runtime file open to force rollback. It also checks preservation of task data and unrelated files. It does not install or uninstall software or alter the user's existing installation.
 
 2.2.x applications cannot consume this format. Install 2.3 with Setup first, or use its portable folder. A running 2.3 application accepts only a strictly newer `.upd` version.
+
+## Version-specific delta packages
+
+`build_delta_update.py --base-version 2.3.2` compares complete release folders and emits only changed files. `base_version` and `preserved_files` document the required base and SHA-256 hashes of reused files. Legacy schema-1 updaters ignore these extra fields; the user must select the exact supported base version and a complete installation. The filename includes the base version. This does not remove obsolete libraries. Integration tests verify every changed and preserved file, restart, and rollback with a changed file locked.

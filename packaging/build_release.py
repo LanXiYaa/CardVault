@@ -11,11 +11,10 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-VERSION = '2.3.2'
-RELEASE = ROOT / 'release'
+from release_paths import ROOT, OUTPUT as RELEASE, BUILD, WORKSPACE
+from compact import compact_package
+VERSION = '2.3.3'
 PACKAGE = RELEASE / f'CardVault-{VERSION}-Windows-x64'
-BUILD = ROOT / 'build' / 'release'
 
 
 def icon():
@@ -109,16 +108,17 @@ def main():
         (PACKAGE / '_internal' / name).unlink(missing_ok=True)
     for name in ('发行版说明.txt', 'THIRD_PARTY_NOTICES.txt'):
         shutil.copy2(ROOT / 'packaging' / name, PACKAGE / name)
+    (BUILD / 'compact-report.json').write_text(json.dumps(compact_package(PACKAGE), indent=2), encoding='utf-8')
     notices()
     # Do not produce an installer if its embedded application cannot run.
     subprocess.run([sys.executable, str(ROOT / 'packaging/test_release.py')], cwd=ROOT, check=True)
-    compiler = Path(os.environ.get('ISCC', str(ROOT / 'build/tools/inno/ISCC.exe')))
+    compiler = Path(os.environ.get('ISCC', str(WORKSPACE / 'build/tools/inno/ISCC.exe')))
     if not compiler.is_file():
         raise SystemExit('Inno Setup compiler missing; set ISCC to its full path.')
-    subprocess.run([str(compiler), str(ROOT / 'packaging/CardVault.iss')], check=True)
+    subprocess.run([str(compiler), '/DOutputRoot=' + str(RELEASE), '/DBuildRoot=' + str(BUILD), str(ROOT / 'packaging/CardVault.iss')], check=True)
     setup = RELEASE / f'CardVault-{VERSION}-Setup-x64.exe'
     archive = RELEASE / f'CardVault-{VERSION}-Windows-x64.zip'
-    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as output:
+    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as output:
         for file in sorted(PACKAGE.rglob('*')):
             if file.is_file():
                 output.write(file, Path(PACKAGE.name) / file.relative_to(PACKAGE))

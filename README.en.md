@@ -1,5 +1,15 @@
 # CardVault
 
+## 2.3.3 smaller distributions
+
+Removed unused Qt QML, virtual keyboard, PDF and OpenGL components while retaining complete Source Han Sans fonts and all four interface languages. Packages are written to the workspace release/ directory, including when built from push; no installers, ZIPs, source ZIPs or .upd files are generated inside push. CARDVAULT_OUTPUT_DIR can select an external output directory. Setup removes explicitly listed obsolete components. Older .upd updaters retain extra libraries: use Setup or a fresh portable extraction to reduce installed size.
+
+Measured against 2.3.2: application directory 142.4 → 102.4 MiB, Setup 53.3 → 41.9 MiB, portable ZIP 70.9 → 54.8 MiB. Validated retained DLL dependencies, real window startup and packaged multi-destination verification.
+
+A ~2.6 MiB `CardVault-2.3.3-from-2.3.2-Windows-x64.upd` delta is now available **only for complete 2.3.2 installations upgrading to 2.3.3**. Drop it into Settings → Update. Existing 2.3.3 installations need no update. Legacy updaters do not enforce delta base versions: do not use this package with another version or an incomplete installation. It reuses identical libraries and fonts and replaces only three changed files. It retains obsolete libraries; use Setup to reduce installed size.
+
+To reproduce, keep complete base and target folders in the workspace release/ directory, run `python packaging/build_delta_update.py --base-version 2.3.2`, then validate with `python packaging/test_update.py`.
+
 ## 2.3.2 fixes
 
 Fixed hidden main windows after updates, including launches from older updaters. Hashing now runs in isolated read-only processes: pause and inactivity timeout cover opening, reading, and closing files. A digest is accepted only after file closure and successful worker exit; failed or timed-out verification never publishes a copy. Preserves the 16:9 startup window. Passed 78 automated tests, including timeout and pause with a simulated permanently blocked file close. Hardware or driver failures may still require attention; staged files and task checkpoints remain available for recovery.
