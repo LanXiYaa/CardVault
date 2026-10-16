@@ -13,7 +13,7 @@ from pathlib import Path
 
 from release_paths import ROOT, OUTPUT as RELEASE, BUILD, WORKSPACE
 from compact import compact_package
-VERSION = '2.3.3'
+VERSION = '2.3.4'
 PACKAGE = RELEASE / f'CardVault-{VERSION}-Windows-x64'
 
 

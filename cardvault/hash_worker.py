@@ -5,7 +5,11 @@ import sys
 import time
 
 
+REQUEST_ID = None
+
 def emit(value):
+    if REQUEST_ID is not None:
+        value['id'] = REQUEST_ID
     print(json.dumps(value), flush=True)
 
 
@@ -30,6 +34,16 @@ def hash_file(path, algorithm, limit=None, opener=open):
 
 
 def main():
+    global REQUEST_ID
+    if '--serve' in sys.argv:
+        for line in sys.stdin:
+            try:
+                request = json.loads(line)
+                REQUEST_ID = request['id']
+                hash_file(request['path'], request['algorithm'], request['limit'])
+            except Exception as error:
+                emit({'error': str(error)})
+        return 0
     try:
         path, algorithm, limit = sys.argv[-3:]
         hash_file(path, algorithm, None if limit == 'none' else int(limit))

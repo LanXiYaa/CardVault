@@ -1,5 +1,6 @@
 """Real .upd replacement and rollback checks in isolated portable copies only."""
 import ctypes
+import argparse
 import hashlib
 import json
 import os
@@ -14,11 +15,17 @@ sys.path.insert(0, str(ROOT))
 from cardvault.updater import stage_package, launch_update, inspect_package
 from cardvault.version import VERSION
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--base-version', default='2.3.3')
+args = parser.parse_args()
+base_version = args.base_version
+version_tuple = __import__('cardvault.updater', fromlist=['version_tuple']).version_tuple
+version_tuple(base_version)
 folder = WORKSPACE / '.test-data' / ('upd-test-' + str(time.time_ns()))
 folder.mkdir(parents=True)
-old_package = OUTPUT / 'CardVault-2.3.2-Windows-x64'
-assert old_package.is_dir(), 'Provide the 2.3.2 portable folder for upgrade verification'
-new_package = OUTPUT / f'CardVault-{VERSION}-from-2.3.2-Windows-x64.upd'
+old_package = OUTPUT / f'CardVault-{base_version}-Windows-x64'
+assert old_package.is_dir(), 'Provide the base portable folder for upgrade verification'
+new_package = OUTPUT / f'CardVault-{VERSION}-from-{base_version}-Windows-x64.upd'
 env = {k: v for k, v in os.environ.items() if not k.upper().startswith(('PYTHON', 'QT_', 'PYSIDE', 'VIRTUAL_ENV', '_PYI'))}
 env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32')
 env['QT_QPA_PLATFORM'] = 'offscreen'
@@ -31,7 +38,7 @@ for rollback in (False, True):
     (state / 'keep.txt').write_text('preserve task records', encoding='utf-8')
     (app / 'personal.txt').write_text('preserve unrelated file', encoding='utf-8')
     before = hashlib.sha256((app / 'CardVault.exe').read_bytes()).hexdigest()
-    package = stage_package(new_package, app, current='2.3.2')
+    package = stage_package(new_package, app, current=base_version)
     update_manifest = inspect_package(new_package)
     old_report = folder / ('old-rollback.json' if rollback else 'old-success.json')
     old = subprocess.Popen([str(app / 'CardVault.exe'), '--self-test', str(old_report)], env=env, cwd=app)
@@ -62,7 +69,7 @@ for rollback in (False, True):
     if rollback:
         assert code == 1 and update['status'] == 'failed', update
         assert 'rollback needs attention' not in update['message'], update
-        assert result['version'] == '2.3.2', result
+        assert result['version'] == base_version, result
         assert hashlib.sha256((app / 'CardVault.exe').read_bytes()).hexdigest() == before
     else:
         assert code == 0 and update['status'] == 'completed', update

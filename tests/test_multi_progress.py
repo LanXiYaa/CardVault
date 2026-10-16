@@ -47,8 +47,8 @@ class MultiProgressTests(unittest.TestCase):
         self.file('large.bin', b'x' * 100)
         readings = []
         original = self.engine.refresh_counts
-        def record(job):
-            original(job)
+        def record(job, **kwargs):
+            original(job, **kwargs)
             if job.get('phase') == 'verification': readings.append(job.get('verify_progress', 0))
         with patch.object(module, 'CHUNK', 10), patch.object(self.engine, 'refresh_counts', side_effect=record):
             job = self.run_job(verification='batch')

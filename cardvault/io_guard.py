@@ -1,4 +1,4 @@
-"""Cooperative read cancellation with Windows synchronous-I/O cancellation.
+"""Cooperative synchronous I/O cancellation with Windows synchronous-I/O cancellation.
 
 Never terminates a thread. Drivers may still delay acknowledging cancellation.
 """
@@ -59,7 +59,7 @@ class ReadGuard:
                 if stopped():
                     raise ReadCancelled() from None
                 if record['cancelled']:
-                    raise TimeoutError('Storage read timed out: ' + str(path)) from None
+                    raise TimeoutError('Storage I/O timed out: ' + str(path)) from None
                 raise
             if stopped() or record['cancelled']:
                 closer = getattr(result, 'close', None)
@@ -68,7 +68,7 @@ class ReadGuard:
             if stopped():
                 raise ReadCancelled()
             if record['cancelled']:
-                raise TimeoutError('Storage read timed out: ' + str(path))
+                raise TimeoutError('Storage I/O timed out: ' + str(path))
             return result
         finally:
             # Synchronize unregister/close with cancellation; the worker cannot

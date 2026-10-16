@@ -27,6 +27,7 @@ class DesktopTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()
         self.engine = Engine(self.root / 'state')
+        (self.engine.state_dir / 'preferences.json').write_text('{"language":"zh_CN"}', encoding='utf-8')
         self.window = MainWindow(self.engine, start_devices=False)
         self.window.options['notify'] = False
         self.window.show()
@@ -170,6 +171,36 @@ class DesktopTests(unittest.TestCase):
             self.assertLessEqual(w, width)
             self.assertLessEqual(h + 80, height)
         self.assertEqual(self.window.width() * 9, self.window.height() * 16)
+
+    def test_removable_device_eject_and_active_task_protection(self):
+        from cardvault.gui import DevicesDialog
+        device = dict(name='test', path=str(self.root), kind='removable', filesystem='test', size=100, free=50)
+        with patch.object(self.window.bridge, 'submit') as submit:
+            dialog = DevicesDialog(self.window)
+            dialog.loaded([device], None)
+            submit.reset_mock()
+            with patch('cardvault.gui.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes), patch('cardvault.gui.eject', return_value='ok') as eject:
+                dialog.eject()
+                work, callback = submit.call_args.args
+                callback(work(), None)
+                eject.assert_called_once_with(device['path'])
+            submit.reset_mock()
+            self.window.update_requested = True
+            active = dict(status='pausing', source=str(self.root / 'card'), targets=[])
+            with patch.object(self.engine, 'list_jobs', return_value=[active]), patch('cardvault.gui.QMessageBox.warning') as warning:
+                dialog.eject()
+                warning.assert_called_once()
+                submit.assert_not_called()
+            dialog.close()
+
+    def test_accent_colors_are_substituted_once(self):
+        from PySide6.QtGui import QColor
+        for color in ('#2e523c', '#f5f7f2', '#e9f0df', '#809e68'):
+            configure_application(self.app, {'color': color})
+            style = self.app.styleSheet()
+            self.assertIn('QPushButton#primary { background:' + color + ';', style)
+            self.assertIn('QPushButton#primary:hover { background:' + QColor(color).darker(120).name(), style)
+        configure_application(self.app)
 
 
 

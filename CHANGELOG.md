@@ -1,5 +1,12 @@
 # 更新记录 / Changelog
 
+## 2.3.4 — 2026-10-16
+
+修复安全弹出异常、暂停状态覆盖和主题串色；优化紧凑状态保存、缓存进度汇总及常驻只读哈希进程；为目标写入、刷盘和提交增加取消检查，保留原有校验强度。88 项测试通过，覆盖 Windows 阻塞读写取消与暂停恢复；发行版窗口启动、2.3.3 增量升级及失败回滚验证通过。
+
+Fixed safe-eject errors, overwritten pause state and cascading theme colors. Added compact checkpoints, cached progress totals, persistent read-only hash workers and cancellation checks for target writes, flushes and publication, preserving verification strength. All 88 tests passed, including Windows blocked I/O cancellation and pause/resume recovery. Packaged window startup, delta upgrade from 2.3.3 and failure rollback were also verified.
+
+
 ## 2.3.3 — 2026-10-11
 
 精简未使用的 Qt 组件，提高发行包压缩等级；构建输出移出 push，Setup 升级清理对应旧组件。保留完整字体和四种语言。实际启动及多目标校验通过；完整 .upd 的相同文件替换在本机失败，现补充仅替换三个变化文件的 2.3.2 → 2.3.3 增量包（约 2.6 MiB）；限完整 2.3.2 安装使用。

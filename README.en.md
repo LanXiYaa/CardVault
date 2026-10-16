@@ -1,5 +1,16 @@
 # CardVault
 
+## 2.3.4 reliability and performance fixes
+
+Fixed safe-eject errors in the device dialog while retaining protection for devices used by active jobs. Checkpoints use compact JSON, serialize under the state lock and flush outside it; ordinary saves are coalesced to at most once every two seconds, with immediate saves at pause and critical boundaries. File summaries are recalculated on state changes; chunk progress uses cached totals. Each copy thread reuses a read-only hash worker, replacing it after timeout, pause or error and disposing it at phase completion. Digests are accepted only after file closure. Destination writes, flushes and Windows rename publication now participate in cancellation, with partial files revalidated on resume. Fixed overwritten pause status and cascading theme-color replacements.
+
+Source pre-hashing and post-copy verification remain unchanged. Passed 88 tests covering real pending Windows reads/writes, blocked hash closure, worker reuse and pause during flush/publication. Cancellation depends on driver cooperation and cannot guarantee immediate return from broken-device open, close or write operations; writer threads are never killed. Typed records, duplicate-code cleanup, log retention and single-read fan-out remain future work.
+
+A local synthetic 20,000-file manifest benchmark measured snapshot work at roughly 166 → 37 ms, chunk summaries at 9.05 → 0.001 ms and JSON size at 8.1 → 4.7 MB. These medians describe that sample, not card throughput. The Windows executable measured roughly 194 ms per fresh hash process versus 1.3 ms with a warmed worker for a local 1 MiB file (20 samples, affected by caching). Run `python packaging/benchmark_engine.py`; add `--exe release-folder/CardVault.exe` to measure packaged hash-worker overhead.
+
+For 2.3.3 installations, use the 2.3.4 delta named `from-2.3.3`; other versions should use Setup. Legacy updaters do not enforce base versions, so select the matching package. All installers and updates remain in the workspace release/ directory.
+
+
 ## 2.3.3 smaller distributions
 
 Removed unused Qt QML, virtual keyboard, PDF and OpenGL components while retaining complete Source Han Sans fonts and all four interface languages. Packages are written to the workspace release/ directory, including when built from push; no installers, ZIPs, source ZIPs or .upd files are generated inside push. CARDVAULT_OUTPUT_DIR can select an external output directory. Setup removes explicitly listed obsolete components. Older .upd updaters retain extra libraries: use Setup or a fresh portable extraction to reduce installed size.
@@ -8,7 +19,7 @@ Measured against 2.3.2: application directory 142.4 → 102.4 MiB, Setup 53.3 �
 
 A ~2.6 MiB `CardVault-2.3.3-from-2.3.2-Windows-x64.upd` delta is now available **only for complete 2.3.2 installations upgrading to 2.3.3**. Drop it into Settings → Update. Existing 2.3.3 installations need no update. Legacy updaters do not enforce delta base versions: do not use this package with another version or an incomplete installation. It reuses identical libraries and fonts and replaces only three changed files. It retains obsolete libraries; use Setup to reduce installed size.
 
-To reproduce, keep complete base and target folders in the workspace release/ directory, run `python packaging/build_delta_update.py --base-version 2.3.2`, then validate with `python packaging/test_update.py`.
+To reproduce, keep complete base and target folders in the workspace release/ directory, run `python packaging/build_delta_update.py --base-version 2.3.2`, then validate with `python packaging/test_update.py --base-version 2.3.2`.
 
 ## 2.3.2 fixes
 

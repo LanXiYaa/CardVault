@@ -2,6 +2,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import os
 import sys
 import traceback
@@ -42,21 +43,19 @@ def configure_application(app, appearance=None):
         accent = QColor('#3c634b')
     app.setFont(QFont(family, 10))
     app.setStyle('Fusion')
-    style = STYLE.replace("'Source Han Sans SC'", "'" + family + "'")
     def tint(amount):
         return QColor(*[round(c * (1 - amount) + 255 * amount) for c in (accent.red(), accent.green(), accent.blue())]).name()
-    style = style.replace('#3c634b', accent.name())
     ink = accent.darker(250).name() if accent.lightnessF() > .55 else accent.name()
-    for old in ('#546e42', '#6a8453', '#446332', '#607c49'):
-        style = style.replace(old, ink)
-    style = style.replace('#f5f7f2', tint(.96))
-    style = style.replace('#2e523c', accent.darker(120).name())
-    for old in ('#7e9e60', '#809e68'):
-        style = style.replace(old, accent.name())
-    for old in ('#e9f0df', '#eaf1df', '#eaf1e0', '#e6efd9', '#edf3e5'):
-        style = style.replace(old, tint(.88))
-    if accent.lightnessF() > .65:
-        style = style.replace("QPushButton#primary { background:" + accent.name() + "; color:white", "QPushButton#primary { background:" + accent.name() + "; color:#17212b")
+    replacements = {"'Source Han Sans SC'": "'" + family + "'", '#3c634b': accent.name(),
+                    '#f5f7f2': tint(.96), '#2e523c': accent.darker(120).name(),
+                    '#7e9e60': accent.name(), '#809e68': accent.name()}
+    replacements.update(dict.fromkeys(('#546e42', '#6a8453', '#446332', '#607c49'), ink))
+    replacements.update(dict.fromkeys(('#e9f0df', '#eaf1df', '#eaf1e0', '#e6efd9', '#edf3e5'), tint(.88)))
+    # One template substitution: generated colors and font names are never reprocessed.
+    template = STYLE.replace('QPushButton#primary { background:#3c634b; color:white',
+                             'QPushButton#primary { background:#3c634b; color:@primary_text@')
+    replacements['@primary_text@'] = '#17212b' if accent.lightnessF() > .65 else 'white'
+    style = re.sub('|'.join(re.escape(key) for key in replacements), lambda match: replacements[match[0]], template)
     arrow = (ROOT / 'assets' / 'qt-down.svg').as_posix()
     app.setStyleSheet(style + f'QComboBox::down-arrow {{ image: url("{arrow}"); width: 12px; height: 12px; }}')
 
@@ -468,8 +467,8 @@ class DevicesDialog(QDialog):
         if device['kind'] != 'removable':
             QMessageBox.information(self, tr('无法弹出'), tr('Windows 未将此卷识别为可弹出设备。'))
             return
-        base = Path(device['path']).resolve()
-        if not self.update_requested and any((j['status'] in ACTIVE and any((under(Path(p), base) for p in [j['source'], *j['targets']])) for j in self.main.engine.list_jobs())):
+        base = Path(os.path.abspath(device['path']))
+        if any((j['status'] in ACTIVE and any((under(Path(p), base) for p in [j['source'], *j['targets']])) for j in self.main.engine.list_jobs())):
             QMessageBox.warning(self, tr('设备正在使用'), tr('请先暂停相关任务，等待进度保存。'))
             return
         if QMessageBox.question(self, tr('安全弹出'), tr('请求 Windows 弹出 {v0}（{v1}）？', v0=device['name'], v1=device['path'])) != QMessageBox.StandardButton.Yes:

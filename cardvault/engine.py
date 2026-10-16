@@ -1,7 +1,6 @@
 from __future__ import annotations
 from .i18n import tr
 import csv
-import copy
 from .io_guard import ReadGuard, ReadCancelled
 from .hash_process import HashProcesses, HashTimeout
 import hashlib
@@ -57,7 +56,7 @@ def clean_name(value: str) -> str:
 def atomic_json(path: Path, data):
     temp = path.with_suffix('.tmp')
     with temp.open('w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write(data if isinstance(data, str) else json.dumps(data, ensure_ascii=False, separators=(',', ':')))
         f.flush()
         os.fsync(f.fileno())
     os.replace(temp, path)
@@ -72,6 +71,8 @@ class Engine:
         self.log_lock = threading.Lock()
         self.destination_lock = threading.Lock()
         self.last_saved = {}
+        self.save_interval = 2.0
+        self.count_totals = {}
         self.io_guard = ReadGuard()
         self.hash_processes = HashProcesses()
         self.jobs = {}
@@ -97,18 +98,19 @@ class Engine:
         # or a pause request. One serializer also prevents stale saves overtaking.
         with self.persistence_lock:
             now = time.monotonic()
-            if not force and now - self.last_saved.get(job['id'], 0) < .5:
+            if not force and now - self.last_saved.get(job['id'], 0) < self.save_interval:
                 return
             with self.lock:
                 job['updated'] = datetime.now().isoformat(timespec='seconds')
-                saved = copy.deepcopy(job)
+                snapshot = dict(job)
                 if paused:
-                    saved.update(status='paused', message=tr('进度已保存，重新连接存储设备后可继续'))
+                    snapshot.update(status='paused', message=tr('进度已保存，重新连接存储设备后可继续'))
+                saved = json.dumps(snapshot, ensure_ascii=False, separators=(',', ':'))
             atomic_json(self.state_dir / (job['id'] + '.json'), saved)
             self.last_saved[job['id']] = time.monotonic()
             if paused:
                 with self.lock:
-                    job.update(status=saved['status'], message=saved['message'])
+                    job.update(status=snapshot['status'], message=snapshot['message'])
 
     def log(self, job, level, message):
         with self.lock:
@@ -359,30 +361,46 @@ class Engine:
                 index = self.verify_threads.get((job['id'], threading.get_ident()))
                 if index is not None:
                     self.verifications[job['id']][index]['read'] += amount
-                    self.refresh_counts(job)
+                    self.refresh_counts(job, totals=False)
         try:
             return self.hash_processes.digest(path, job.get('hash_algorithm', 'sha256'), limit,
                                              job['id'], lambda: self.stopped(job), progress)
         except ReadCancelled:
             raise Paused() from None
 
-    def refresh_counts(self, job):
+    def refresh_counts(self, job, totals=True):
         with self.lock:
-            job['copied'] = sum((f['status'] == 'done' for f in job['files']))
-            job['skipped'] = sum((f['status'] == 'skipped' for f in job['files']))
-            job['failed'] = sum((f['status'] == 'failed' for f in job['files']))
+            if totals or job['id'] not in self.count_totals:
+                copied = skipped = failed = done = copied_units = verified_units = total_units = 0
+                for item in job['files']:
+                    copied += item['status'] == 'done'
+                    skipped += item['status'] == 'skipped'
+                    failed += item['status'] == 'failed'
+                    copies = len(item['copies'])
+                    staged = len(item.get('staged', {}))
+                    units = max(item['size'], 1)
+                    done += item['size'] * (copies + staged)
+                    copied_units += units * (copies + staged)
+                    verified_units += units * copies
+                    total_units += units * len(job['targets'])
+                job.update(copied=copied, skipped=skipped, failed=failed, progress_total=total_units)
+                self.count_totals[job['id']] = (done, copied_units, verified_units)
+            done, copied_units, verified_units = self.count_totals[job['id']]
             active = self.transfers.get(job['id'], {})
-            job['done_bytes'] = sum((f['size'] * len(f['copies']) for f in job['files'])) + sum(f['size'] * len(f.get('staged', {})) for f in job['files']) + sum((v[0] for v in active.values()))
-            job['speed'] = sum((v[1] for v in active.values()))
-            # Count empty files as one unit. Verification includes target and source reads.
-            job['progress_total'] = sum(max(f['size'], 1) for f in job['files']) * len(job['targets'])
-            job['copy_progress'] = sum(max(f['size'], 1) * (len(f['copies']) + len(f.get('staged', {}))) for f in job['files']) + sum(v[0] for v in active.values())
-            job['verify_progress'] = sum(max(f['size'], 1) * len(f['copies']) for f in job['files'])
+            transferred = sum(v[0] for v in active.values())
+            job['done_bytes'] = done + transferred
+            job['speed'] = sum(v[1] for v in active.values())
+            job['copy_progress'] = min(job['progress_total'], copied_units + transferred)
             for record in self.verifications.get(job['id'], {}).values():
                 if record['target'] not in record['item']['copies']:
-                    job['verify_progress'] += min(record['read'] / 2, record['item']['size'] * .99)
-            job['copy_progress'] = min(job['progress_total'], job['copy_progress'])
-            job['verify_progress'] = min(job['progress_total'], job['verify_progress'])
+                    verified_units += min(record['read'] / 2, record['item']['size'] * .99)
+            job['verify_progress'] = min(job['progress_total'], verified_units)
+
+    def transfer_status(self, job, status, message):
+        with self.lock:
+            self.checkpoint(job)
+            if job['status'] != 'pausing':
+                job.update(status=status, message=message)
 
     def check_source(self, source, item):
         if linklike(source) or normalized_path(source.resolve()) != normalized_path(source):
@@ -419,8 +437,7 @@ class Engine:
             partial = self.checked_dest(job, target, staged['staging'])
             if partial.is_file() and partial.stat().st_size == item['size']:
                 return
-        job['status'] = 'verifying'
-        job['message'] = tr('计算源文件 {v0}', v0=algorithm.upper())
+        self.transfer_status(job, 'verifying', tr('计算源文件 {v0}', v0=algorithm.upper()))
         expected = self.digest(source, job)
         if item.get(algorithm) and item[algorithm] != expected:
             raise OSError(tr('源文件内容已变化，请创建新任务'))
@@ -479,25 +496,30 @@ class Engine:
             staging.unlink()
             offset = 0
             self.log(job, 'warning', tr('临时文件校验不符，从头重拷：{v0}', v0=item['relative']))
-        job.update(status='copying', message=tr('正在复制到 ') + target)
+        self.transfer_status(job, 'copying', tr('正在复制到 ') + target)
         started, transferred = (time.monotonic(), 0)
         self.refresh_counts(job)
         with self.lock:
             self.transfers.setdefault(job['id'], {})[index] = (offset, 0)
-        with source.open('rb') as src, staging.open('ab' if offset else 'wb') as dst:
+        with source.open('rb') as src, staging.open('ab' if offset else 'wb', buffering=0) as dst:
             src.seek(offset)
             while True:
                 self.checkpoint(job)
                 block = self.read_io(job, source, lambda: src.read(CHUNK))
                 if not block:
                     break
-                dst.write(block)
+                remaining = memoryview(block)
+                while remaining:
+                    written = self.read_io(job, staging, lambda: dst.write(remaining))
+                    if not written:
+                        raise OSError('Destination write made no progress')
+                    remaining = remaining[written:]
                 transferred += len(block)
                 with self.lock:
                     self.transfers[job['id']][index] = (offset + transferred, transferred / max(time.monotonic() - started, 0.001))
-                    self.refresh_counts(job)
-            dst.flush()
-            os.fsync(dst.fileno())
+                    self.refresh_counts(job, totals=False)
+            self.read_io(job, staging, dst.flush)
+            self.read_io(job, staging, lambda: os.fsync(dst.fileno()))
         with self.lock:
             item.setdefault('staged', {})[target] = {'path': relative, 'staging': str(staging.relative_to(target)), algorithm: expected, 'collision': collision}
             self.transfers.get(job['id'], {}).pop(index, None)
@@ -535,7 +557,7 @@ class Engine:
         self.check_source(source, item)
         with self.lock:
             self.transfers.get(job['id'], {}).pop(index, None)
-            job.update(status='verifying', message=tr('校验目标副本 {v0}', v0=algorithm.upper()))
+            self.transfer_status(job, 'verifying', tr('校验目标副本 {v0}', v0=algorithm.upper()))
             self.refresh_counts(job)
         if self.digest(staging, job) != expected:
             raise OSError(tr('{v0} 校验不一致，目标副本未提交', v0=algorithm.upper()))
@@ -545,9 +567,9 @@ class Engine:
         self.checkpoint(job)
         self.checked_dest(job, target, relative)
         if job['duplicate'] == 'overwrite' and (not collision):
-            os.replace(staging, dest)
+            self.read_io(job, dest, lambda: os.replace(staging, dest))
         elif os.name == 'nt':
-            os.rename(staging, dest)
+            self.read_io(job, dest, lambda: os.rename(staging, dest))
         else:
             os.link(staging, dest)
             staging.unlink()
@@ -663,6 +685,7 @@ class Engine:
                         for future in pending:
                             future.cancel()
                         raise
+                self.hash_processes.close_job(job['id'])
             job['status'] = 'partial' if job['failed'] else 'completed'
             job['message'] = tr('完成：{v0} 个已复制，{v1} 个相同文件已跳过，{v2} 个失败', v0=job['copied'], v1=job['skipped'], v2=job['failed'])
             self.log(job, 'warning' if job['failed'] else 'success', job['message'])
@@ -674,6 +697,7 @@ class Engine:
             job.update(status='failed', message=str(error))
             self.log(job, 'error', str(error))
         finally:
+            self.hash_processes.close_job(job['id'])
             self.aborts.pop(job['id'], None)
             self.transfers.pop(job['id'], None)
             self.verifications.pop(job['id'], None)
@@ -703,4 +727,5 @@ class Engine:
         for event in self.stops.values():
             event.set()
         self.pool.shutdown(wait=True)
+        self.hash_processes.close()
         self.io_guard.close()

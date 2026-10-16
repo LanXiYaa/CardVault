@@ -1,12 +1,12 @@
-CardVault 2.3.3 · Windows 10/11 x64
+CardVault 2.3.4 · Windows 10/11 x64
 
 由 AI 制作 / Made with AI
 
-首次安装：运行 CardVault-2.3.3-Setup-x64.exe。
+首次安装：运行 CardVault-2.3.4-Setup-x64.exe。
 便携运行：完整解压 Windows-x64.zip，运行 CardVault.exe，保留全部 DLL 与资源。
 无需预装 Python 或依赖库，不使用 BAT 启动。
 
-2.3.3 修复
+2.3.4 修复
 - 集中校验顺序读取，避免多个校验线程同时争抢读卡器。
 - 记录保存不再占用界面锁；暂停时请求取消 Windows 等待读取。
 - 读取超过 30 秒请求取消，显示设备等待状态；实际取消时间取决于驱动响应。

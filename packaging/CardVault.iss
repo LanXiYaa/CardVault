@@ -4,7 +4,7 @@
 #ifndef BuildRoot
 #error BuildRoot required
 #endif
-#define Version "2.3.3"
+#define Version "2.3.4"
 [Setup]
 AppId={{1753D345-8BBB-4849-B0A2-914F0CCFF875}
 AppName=CardVault

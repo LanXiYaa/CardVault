@@ -17,6 +17,81 @@ class PauseRegressionTests(unittest.TestCase):
     job = test_engine.BackupTests.job
     run_job = test_engine.BackupTests.run_job
 
+    def test_pause_during_target_flush_keeps_unpublished_data_recoverable(self):
+        self.file('file.bin', b'original' * 1000)
+        job = self.job(verification='batch')
+        import cardvault.engine as module
+        original = module.os.fsync
+        def flush(fd):
+            original(fd)
+            if threading.current_thread().name.startswith('copy-'):
+                self.engine.stops[job['id']].set()
+        with patch.object(module.os, 'fsync', side_effect=flush):
+            self.engine.run(job)
+        self.assertEqual(job['status'], 'paused', job['message'])
+        self.assertFalse((self.a / 'file.bin').exists())
+        self.assertTrue(list(self.a.glob('*.part')))
+        self.engine.stops[job['id']].clear()
+        self.engine.run(job)
+        self.assertEqual(job['status'], 'completed', job['message'])
+        self.assertEqual((self.a / 'file.bin').read_bytes(), b'original' * 1000)
+
+    def test_pause_after_publication_adopts_verified_file_on_resume(self):
+        self.file('file.bin', b'original')
+        job = self.job(verification='batch')
+        import cardvault.engine as module
+        original = module.os.rename
+        def publish(source, dest):
+            original(source, dest)
+            if str(source).endswith('.part'):
+                self.engine.stops[job['id']].set()
+        with patch.object(module.os, 'rename', side_effect=publish):
+            self.engine.run(job)
+        self.assertEqual(job['status'], 'paused', job['message'])
+        self.engine.stops[job['id']].clear()
+        self.engine.run(job)
+        self.assertEqual(job['status'], 'completed', job['message'])
+        self.assertEqual(list(self.a.glob('*.bin')), [self.a / 'file.bin'])
+        self.assertEqual((self.a / 'file.bin').read_bytes(), b'original')
+
+    def test_chunk_counts_do_not_iterate_manifest(self):
+        self.file()
+        job = self.job()
+        self.engine.scan(job)
+        self.engine.refresh_counts(job)
+        files = job['files']
+        class ForbiddenIteration(list):
+            def __iter__(self):
+                raise AssertionError('Chunk update traversed all files')
+        job['files'] = ForbiddenIteration(files)
+        try:
+            self.engine.transfers[job['id']] = {0: (5, 2)}
+            self.engine.refresh_counts(job, totals=False)
+            self.assertEqual(job['copy_progress'], 5)
+            self.assertEqual(job['speed'], 2)
+        finally:
+            job['files'] = files
+
+    def test_pause_status_cannot_be_overwritten_by_transfer(self):
+        self.file()
+        job = self.job()
+        self.engine.pause(job['id'])
+        with self.assertRaises(Paused):
+            self.engine.transfer_status(job, 'copying', 'copying')
+        self.assertEqual(job['status'], 'pausing')
+
+    def test_json_checkpoint_is_compact_and_independent(self):
+        self.file()
+        job = self.job()
+        self.engine.scan(job)
+        with patch('cardvault.engine.atomic_json') as save:
+            self.engine.save(job, force=True)
+        text = save.call_args.args[1]
+        self.assertIsInstance(text, str)
+        self.assertNotIn('\n  ', text)
+        job['files'][0]['relative'] = 'changed'
+        self.assertNotEqual(json.loads(text)['files'][0]['relative'], 'changed')
+
     def test_slow_state_flush_does_not_block_snapshot_or_pause(self):
         self.file()
         job = self.job()
@@ -112,7 +187,7 @@ class PauseRegressionTests(unittest.TestCase):
         entered, release = threading.Event(), threading.Event()
         from cardvault.engine import atomic_json
         def save(path, value):
-            if value['status'] == 'paused':
+            if (json.loads(value) if isinstance(value, str) else value)['status'] == 'paused':
                 entered.set()
                 release.wait(4)
             atomic_json(path, value)
@@ -160,6 +235,43 @@ class WindowsReadCancellationTests(unittest.TestCase):
             stream.close()
             os.close(write_fd)
             guard.close()
+
+    def blocked_write(self, pause):
+        guard = ReadGuard(timeout=30 if pause else .1, interval=.01)
+        read_fd, write_fd = os.pipe()
+        started, done, stop = threading.Event(), threading.Event(), threading.Event()
+        errors = []
+        def worker():
+            try:
+                def write():
+                    started.set()
+                    return os.write(write_fd, b'x' * (1024 * 1024))
+                guard.call('job', 'blocked-write', stop.is_set, write)
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                done.set()
+        thread = threading.Thread(target=worker)
+        thread.start()
+        try:
+            self.assertTrue(started.wait(2))
+            if pause: stop.set()
+            self.assertTrue(done.wait(3), 'Pending Windows write was not cancelled')
+            self.assertIsInstance(errors[0], ReadCancelled if pause else TimeoutError)
+        finally:
+            if not done.is_set():
+                os.close(read_fd)
+                read_fd = None
+            thread.join(3)
+            os.close(write_fd)
+            if read_fd is not None: os.close(read_fd)
+            guard.close()
+
+    def test_pause_cancels_real_pending_windows_write(self):
+        self.blocked_write(True)
+
+    def test_timeout_cancels_real_pending_windows_write(self):
+        self.blocked_write(False)
 
     def test_pause_cancels_real_pending_windows_read(self):
         self.blocked_pipe(30, True)
